@@ -25,6 +25,8 @@ export class LocalRepository implements Repository {
       return emptySnapshot()
     }
   }
-  async save(next: Snapshot) { localStorage.setItem(KEY, JSON.stringify(next)) }
-  async clear() { localStorage.removeItem(KEY) }
+  async save(next: Snapshot) {
+    try { localStorage.setItem(KEY, JSON.stringify(next)) } catch (e) { console.error('SpendWise: could not save to device storage', e) }
+  }
+  async clear() { try { localStorage.removeItem(KEY) } catch { /* storage unavailable */ } }
 }
