@@ -139,7 +139,7 @@ export class SupabaseRepository implements Repository {
     const p: Snapshot = prev ?? { ...next, transactions: [], categories: [], sources: [], budgets: [], recurring: [], rules: [], profile: { ...next.profile, fullName: '\u0000' }, prefs: { ...next.prefs, theme: '\u0000' as never } }
     const ok = <T extends { error: unknown }>(r: T) => { if (r.error) throw r.error; return r }
 
-    if (p.profile.fullName !== next.profile.fullName) ok(await db.from('profiles').update({ full_name: next.profile.fullName || null }).eq('id', uid))
+    if (p.profile.fullName !== next.profile.fullName) ok(await db.from('profiles').upsert({ id: uid, full_name: next.profile.fullName || null }))
     if (JSON.stringify(p.prefs) !== JSON.stringify(next.prefs)) ok(await db.from('user_preferences').upsert(M.prefsToRow(next.prefs, uid)))
 
     const src = diff(p.sources, next.sources, (s) => s.id)
