@@ -75,7 +75,7 @@ export function Login() {
         <Button type="submit" className="w-full" disabled={!backendConfigured || busy}>{busy ? <Loader2 className="animate-spin" /> : null}{mode === 'signin' ? 'Sign in' : 'Create account'}</Button>
       </form>
       {!backendConfigured && (
-        <p className="mt-3 flex gap-2 rounded-xl bg-muted p-3 text-xs text-muted-foreground"><Info className="size-4 shrink-0" />This build has no backend configured, so only device-only mode is available.</p>
+        <p className="mt-3 flex gap-2 rounded-xl bg-muted p-3 text-xs text-muted-foreground"><Info className="size-4 shrink-0" />Sign-in isn’t available in this web preview. Install the Android app to use your account.</p>
       )}
 
       <div className="my-6 flex items-center gap-3 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border" />or<span className="h-px flex-1 bg-border" /></div>
