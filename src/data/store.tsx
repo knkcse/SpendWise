@@ -23,7 +23,7 @@ export function makeActions(get: () => Snapshot, set: (fn: (s: Snapshot) => Snap
 
   const build = (input: NewTransaction, s: Snapshot): Transaction => {
     let { categoryId, status } = input
-    if (!categoryId && input.type === 'debit') {
+    if (!categoryId && input.type === 'debit' && !input.splits.length) {
       const sug = suggestCategory(input.merchantName, input.description, s.rules, s.categories)
       categoryId = sug.categoryId
       status = sug.confident ? status : 'needs_review'

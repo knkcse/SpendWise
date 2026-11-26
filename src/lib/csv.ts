@@ -1,4 +1,4 @@
-import type { Category, PaymentSource, Transaction } from './types'
+import type { Category, PaymentMethod, PaymentSource, Transaction } from './types'
 
 export const COLS = ['date', 'type', 'amount', 'merchant', 'category', 'payment_method', 'payment_source', 'reference', 'description', 'notes', 'scope', 'excluded', 'split_parts'] as const
 
@@ -43,7 +43,30 @@ export function parseCSV(text: string): string[][] {
   return rows.filter((r) => r.some((c) => c.trim()))
 }
 
-export interface ImportRow { occurredAt: string; type: 'debit' | 'credit'; amount: number; merchant: string; category?: string; reference?: string; description?: string; error?: string }
+export interface ImportSplit { category: string; amount: number; note?: string }
+export interface ImportRow {
+  occurredAt: string; type: 'debit' | 'credit'; amount: number; merchant: string; category?: string; reference?: string; description?: string
+  paymentMethod?: PaymentMethod; notes?: string; excluded?: boolean; splits?: ImportSplit[]; error?: string
+}
+
+const METHODS: PaymentMethod[] = ['upi', 'credit_card', 'debit_card', 'net_banking', 'cash', 'wallet', 'other']
+/** "upi", "UPI", "Credit card", "credit_card" -> PaymentMethod */
+function parseMethod(v?: string): PaymentMethod | undefined {
+  const k = (v ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  return METHODS.includes(k as PaymentMethod) ? (k as PaymentMethod) : undefined
+}
+
+/** Parses our split_parts format: "Groceries 10000; Household 5000 (cleaning)". */
+export function parseSplitParts(v: string): ImportSplit[] | 'invalid' {
+  const parts = v.split(';').map((x) => x.trim()).filter(Boolean)
+  const out: ImportSplit[] = []
+  for (const p of parts) {
+    const m = p.match(/^(.+?)\s+(\d+(?:\.\d+)?)(?:\s*\((.*)\))?$/)
+    if (!m) return 'invalid'
+    out.push({ category: m[1].trim(), amount: Number(m[2]), note: m[3]?.trim() || undefined })
+  }
+  return out
+}
 
 /** Accepts our own export format, or any CSV with date / amount / merchant-ish headers */
 export function mapImport(rows: string[][]): ImportRow[] {
@@ -52,6 +75,8 @@ export function mapImport(rows: string[][]): ImportRow[] {
   const idx = (...names: string[]) => h.findIndex((x) => names.some((n) => x === n || x.includes(n)))
   const iDate = idx('date', 'time'), iAmt = idx('amount', 'debit', 'withdrawal'), iMer = idx('merchant', 'payee', 'description', 'narration', 'name')
   const iType = idx('type', 'dr/cr'), iCat = idx('category'), iRef = idx('reference', 'ref', 'utr'), iDesc = idx('description', 'remarks')
+  const exact = (n: string) => h.indexOf(n)
+  const iMethod = exact('payment_method'), iNotes = exact('notes'), iExcl = exact('excluded'), iSplit = exact('split_parts')
   return rows.slice(1).map((r) => {
     const amount = Number((r[iAmt] ?? '').replace(/[₹,\s]/g, ''))
     const d = parseDate(r[iDate] ?? '')
@@ -60,9 +85,18 @@ export function mapImport(rows: string[][]): ImportRow[] {
       occurredAt: d ? d.toISOString() : '', amount: Math.abs(amount), merchant: (r[iMer] ?? '').trim(),
       type: /credit|cr\b/.test(typeRaw) ? 'credit' : 'debit',
       category: iCat >= 0 ? r[iCat]?.trim() : undefined, reference: iRef >= 0 ? r[iRef]?.trim() || undefined : undefined,
-      description: iDesc >= 0 && iDesc !== iMer ? r[iDesc]?.trim() : undefined,
+      description: iDesc >= 0 && iDesc !== iMer ? r[iDesc]?.trim() || undefined : undefined,
+      paymentMethod: iMethod >= 0 ? parseMethod(r[iMethod]) : undefined,
+      notes: iNotes >= 0 ? r[iNotes]?.trim() || undefined : undefined,
+      excluded: iExcl >= 0 ? /^(true|yes|1)$/i.test((r[iExcl] ?? '').trim()) : undefined,
     }
-    if (!d) out.error = 'Invalid date'
+    const sp = iSplit >= 0 && r[iSplit]?.trim() ? parseSplitParts(r[iSplit]) : undefined
+    if (sp === 'invalid') out.error = 'Unreadable split_parts'
+    else if (sp?.length) {
+      out.splits = sp
+      if (Math.abs(sp.reduce((a, x) => a + x.amount, 0) - Math.abs(amount)) > 0.01) out.error = 'Split parts don’t add up to the amount'
+    }
+    if (out.error) { /* split error already set */ } else if (!d) out.error = 'Invalid date'
     else if (!(amount > 0 || amount < 0)) out.error = 'Invalid amount'
     else if (!out.merchant) out.error = 'Missing merchant'
     return out

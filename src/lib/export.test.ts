@@ -28,3 +28,19 @@ describe('exports show split parts', () => {
     expect(aoa.slice(2).map((r) => [r[1], r[2], r[4]])).toEqual([['split part', 10000, 'Groceries'], ['split part', 5000, 'Household']])
   })
 })
+
+describe('import reads our own export columns', () => {
+  it('parses method, notes, excluded and split parts; rejects parts that do not add up', async () => {
+    const { mapImport } = await import('./csv')
+    const H = 'date,type,amount,merchant,category,payment_method,payment_source,reference,description,notes,scope,excluded,split_parts'
+    const rows = mapImport(parseCSV(`${H}\n2026-11-05T18:30:00+05:30,debit,4250,DMart,,debit_card,,,x,n1,personal,true,Groceries 3400; Other 850 (cleaning)\n2026-11-05T18:30:00+05:30,debit,100,X,,upi,,,,,personal,false,Groceries 30`))
+    expect(rows[0]).toMatchObject({ paymentMethod: 'debit_card', notes: 'n1', excluded: true, splits: [{ category: 'Groceries', amount: 3400 }, { category: 'Other', amount: 850, note: 'cleaning' }] })
+    expect(rows[0].error).toBeUndefined()
+    expect(rows[1].error).toMatch(/add up/)
+  })
+  it('round-trips a split export', async () => {
+    const { mapImport } = await import('./csv')
+    const r = mapImport(parseCSV(toCSV([dmart], cats, [])))[0]
+    expect(r.error).toBeUndefined(); expect(r.splits?.map((s) => s.amount)).toEqual([10000, 5000])
+  })
+})

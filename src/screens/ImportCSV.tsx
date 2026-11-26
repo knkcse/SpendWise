@@ -41,9 +41,10 @@ export default function ImportCSV() {
   const doImport = () => {
     const catId = (n?: string) => (n ? categories.find((c) => c.name.toLowerCase() === n.toLowerCase())?.id ?? null : null)
     const items: NewTransaction[] = fresh.map(({ r }) => ({
-      type: r.type, amount: r.amount, merchantName: r.merchant.slice(0, 120), occurredAt: r.occurredAt, paymentMethod: 'other', paymentSourceId: null,
-      categoryId: catId(r.category), subcategoryId: null, description: r.description, transactionReference: r.reference,
-      origin: 'csv_import', status: 'confirmed', scope: 'personal', excludeFromReports: false, splits: [],
+      type: r.type, amount: r.amount, merchantName: r.merchant.slice(0, 120), occurredAt: r.occurredAt, paymentMethod: r.paymentMethod ?? 'other', paymentSourceId: null,
+      categoryId: r.splits?.length ? null : catId(r.category), subcategoryId: null, description: r.description, transactionReference: r.reference, notes: r.notes,
+      origin: 'csv_import', status: 'confirmed', scope: 'personal', excludeFromReports: r.excluded ?? false,
+      splits: (r.splits ?? []).map((p) => ({ id: crypto.randomUUID(), categoryId: catId(p.category), amount: p.amount, note: p.note })),
     }))
     const res = importTransactions(items)
     toast(`Imported ${res.added} transaction${res.added === 1 ? '' : 's'}${res.skipped ? `, skipped ${res.skipped} duplicates` : ''}`)
