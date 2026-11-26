@@ -21,4 +21,8 @@ export interface Repository {
   clear(): Promise<void>
   onStatus?(cb: (s: SyncStatus) => void): () => void
   dispose?(): void
+  /** Re-read from the server (other devices' changes). Returns null if local changes are still pending. */
+  refresh?(): Promise<Snapshot | null>
+  /** Repository changed the data itself (e.g. dropped a duplicate another device already saved). */
+  onSnapshot?(cb: (s: Snapshot) => void): () => void
 }

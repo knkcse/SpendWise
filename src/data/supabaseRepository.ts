@@ -30,6 +30,7 @@ export class SupabaseRepository implements Repository {
   private flushing: Promise<void> | null = null
   private dirty = false
   private listeners = new Set<(s: SyncStatus) => void>()
+  private snapListeners = new Set<(s: Snapshot) => void>()
   private status: SyncStatus = { state: 'idle', pending: false }
   private timer: ReturnType<typeof setInterval>
   private readonly cacheKey: string
@@ -41,6 +42,17 @@ export class SupabaseRepository implements Repository {
   }
 
   dispose() { window.removeEventListener('online', this.retry); clearInterval(this.timer) }
+
+  onSnapshot(cb: (s: Snapshot) => void) { this.snapListeners.add(cb); return () => { this.snapListeners.delete(cb) } }
+
+  async refresh(): Promise<Snapshot | null> {
+    if (this.status.pending || this.flushing) { await this.flush(); if (this.status.pending) return null }
+    const snap = await this.fetchAll()
+    if (this.status.pending) return null // user edited while we were fetching
+    this.current = snap; this.synced = snap; this.writeCache()
+    this.setStatus({ state: 'idle', lastSyncedAt: new Date().toISOString(), message: undefined })
+    return snap
+  }
 
   onStatus(cb: (s: SyncStatus) => void) { this.listeners.add(cb); cb(this.status); return () => { this.listeners.delete(cb) } }
   private setStatus(s: Partial<SyncStatus>) { this.status = { ...this.status, ...s }; this.listeners.forEach((l) => l(this.status)) }
@@ -90,14 +102,23 @@ export class SupabaseRepository implements Repository {
         const target = this.current!
         this.setStatus({ state: 'syncing' })
         try {
-          await this.push(this.synced, target)
+          const dropped = await this.push(this.synced, target)
+          if (dropped.size) {
+            // Another device already saved these payments: keep the server's copy.
+            const strip = (x: Snapshot) => ({ ...x, transactions: x.transactions.filter((t) => !dropped.has(t.id)) })
+            const cleaned = strip(this.current!)
+            this.current = cleaned; this.writeCache() // synced is unchanged, so the rest is pushed on the next pass
+            this.snapListeners.forEach((l) => l(cleaned))
+            continue
+          }
           this.synced = target; this.writeCache()
           this.setStatus({ state: 'idle', pending: this.current !== target, lastSyncedAt: new Date().toISOString(), message: undefined })
         } catch (e) {
           this.setStatus({ state: navigator.onLine ? 'error' : 'offline', pending: true, message: errMsg(e) })
           return
         }
-      } while (this.dirty || this.current !== this.synced)
+      } while (this.dirty || JSON.stringify(this.current) !== JSON.stringify(this.synced))
+      this.setStatus({ state: 'idle', pending: false, lastSyncedAt: new Date().toISOString(), message: undefined })
     })().finally(() => { this.flushing = null })
     return this.flushing
   }
@@ -138,7 +159,7 @@ export class SupabaseRepository implements Repository {
   }
 
   /** Write the difference between two snapshots. Parents are written before children, deletes children-first. */
-  private async push(prev: Snapshot | null, next: Snapshot) {
+  private async push(prev: Snapshot | null, next: Snapshot): Promise<Set<string>> {
     const db = this.db; const uid = this.userId
     const p: Snapshot = prev ?? { ...next, transactions: [], categories: [], sources: [], budgets: [], recurring: [], rules: [], profile: { ...next.profile, fullName: '\u0000' }, prefs: { ...next.prefs, theme: '\u0000' as never } }
     const ok = <T extends { error: unknown }>(r: T) => { if (r.error) throw r.error; return r }
@@ -159,6 +180,18 @@ export class SupabaseRepository implements Repository {
     if (catUp.length) ok(await db.from('categories').upsert(catUp.map((c) => M.categoryToRow(c, uid))))
 
     const tx = diff(p.transactions, next.transactions, (t) => t.id)
+    // New rows whose dedupe key is already on the server (saved from another device or an earlier import).
+    const known = new Set(p.transactions.map((t) => t.id))
+    const fresh = tx.upserts.filter((t) => !known.has(t.id))
+    const dropped = new Set<string>()
+    for (let i = 0; i < fresh.length; i += 200) {
+      const part = fresh.slice(i, i + 200)
+      const { data, error } = await db.from('transactions').select('id, dedupe_key').in('dedupe_key', part.map((t) => t.dedupeKey))
+      if (error) throw error
+      const byKey = new Map((data ?? []).map((r) => [r.dedupe_key as string, r.id as string]))
+      for (const t of part) { const other = byKey.get(t.dedupeKey); if (other && other !== t.id) dropped.add(t.id) }
+    }
+    if (dropped.size) return dropped
     for (let i = 0; i < tx.upserts.length; i += 500) {
       const chunk = tx.upserts.slice(i, i + 500)
       ok(await db.from('transactions').upsert(chunk.map((t) => M.txnToRow(t, uid))))
@@ -182,6 +215,7 @@ export class SupabaseRepository implements Repository {
     if (bud.deletes.length) ok(await db.from('budgets').delete().in('id', bud.deletes))
     for (let i = 0; i < tx.deletes.length; i += 500) ok(await db.from('transactions').delete().in('id', tx.deletes.slice(i, i + 500)))
     if (cat.deletes.length) ok(await db.from('categories').delete().in('id', cat.deletes))
+    return dropped
   }
 }
 

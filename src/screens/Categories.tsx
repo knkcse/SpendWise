@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils'
 const COLORS = ['#f97316', '#84cc16', '#ec4899', '#0ea5e9', '#eab308', '#8b5cf6', '#10b981', '#ef4444', '#6366f1', '#14b8a6', '#64748b']
 
 export default function Categories() {
-  const { categories, transactions, addCategory, updateCategory, deleteCategory } = useStore()
+  const { categories, transactions, rules, addCategory, updateCategory, deleteCategory, deleteRule } = useStore()
   const toast = useToast()
   const [kind, setKind] = useState<'expense' | 'income'>('expense')
   const [editing, setEditing] = useState<Partial<Category> | null>(null)
@@ -58,6 +58,22 @@ export default function Categories() {
           ))}
         </Card>
         <p className="text-center text-xs text-muted-foreground">Default categories can’t be renamed or deleted, but you can add subcategories to them.</p>
+
+        {kind === 'expense' && (<>
+          <p className="px-1 pt-2 text-xs font-medium text-muted-foreground">Learned from your corrections</p>
+          <Card className="divide-y">
+            {rules.length === 0 && <p className="p-4 text-sm text-muted-foreground">When you change a transaction’s category, SpendWise remembers it for that merchant. Those rules appear here.</p>}
+            {[...rules].sort((a, b) => a.merchantKey.localeCompare(b.merchantKey)).map((r) => {
+              const c = categories.find((x) => x.id === r.categoryId)
+              return (
+                <div key={r.merchantKey} className="flex items-center gap-3 px-4 py-2.5">
+                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium capitalize">{r.merchantKey}</p><p className="truncate text-xs text-muted-foreground">→ {c?.name ?? 'Deleted category'}</p></div>
+                  <Button size="sm" variant="ghost" aria-label={`Forget rule for ${r.merchantKey}`} onClick={() => { deleteRule(r.merchantKey); toast('Rule removed') }}><Trash2 /></Button>
+                </div>
+              )
+            })}
+          </Card>
+        </>)}
       </div>
 
       <Sheet open={!!editing} onOpenChange={(o) => !o && setEditing(null)} title={editing?.id ? 'Edit category' : editing?.parentId ? 'New subcategory' : 'New category'}>

@@ -1,15 +1,16 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { format } from 'date-fns'
-import { Download, FileSpreadsheet, ListFilter, Receipt, Search, Upload, X } from 'lucide-react'
+import { Download, EyeOff, FileSpreadsheet, ListFilter, Receipt, Search, Tags, Trash2, Upload, X } from 'lucide-react'
 import { PageHeader } from '@/components/layout/AppShell'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input, Label, Select } from '@/components/ui/input'
-import { Badge, Empty, Sheet } from '@/components/ui/misc'
+import { Badge, Confirm, Empty, Sheet } from '@/components/ui/misc'
 import { DateFilter, useDateFilter } from '@/components/DateFilter'
 import { TxnRow } from '@/components/TxnRow'
 import { Fab } from './Dashboard'
+import { PullToRefresh } from '@/components/PullToRefresh'
 import { useStore } from '@/data/store'
 import { inRange, round2 } from '@/lib/analytics'
 import { download, toCSV } from '@/lib/csv'
@@ -24,7 +25,7 @@ interface Filters { categoryId: string; sourceId: string; method: '' | PaymentMe
 const EMPTY: Filters = { categoryId: '', sourceId: '', method: '', merchant: '', min: '', max: '', type: '', status: '' }
 
 export default function Transactions() {
-  const { transactions, categories, sources, prefs } = useStore()
+  const { transactions, categories, sources, prefs, bulkUpdate, bulkDelete } = useStore()
   const toast = useToast()
   const [params] = useSearchParams()
   const [q, setQ] = useState('')
@@ -32,6 +33,12 @@ export default function Transactions() {
   const [filters, setFilters] = useState<Filters>({ ...EMPTY, status: params.get('status') === 'needs_review' ? 'needs_review' : '' })
   const [open, setOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
+  const [selecting, setSelecting] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkCat, setBulkCat] = useState(false)
+  const [bulkDel, setBulkDel] = useState(false)
+  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  const endSelect = () => { setSelecting(false); setSelected(new Set()) }
   const f = useDateFilter('all', prefs.weekStartsOn)
 
   const list = useMemo(() => {
@@ -69,9 +76,10 @@ export default function Transactions() {
 
   const stamp = format(new Date(), 'yyyy-MM-dd')
   return (
-    <div>
+    <PullToRefresh><div>
       <PageHeader title="Transactions" subtitle={`${list.length} shown · ${formatINR(total)} spent`}
-        right={<>
+        right={selecting ? <Button size="sm" variant="ghost" onClick={endSelect}>Done</Button> : <>
+          <Button size="sm" variant="ghost" onClick={() => setSelecting(true)} disabled={!list.length}>Select</Button>
           <Button size="icon" variant="ghost" asChild aria-label="Import CSV"><Link to="/transactions/import"><Upload /></Link></Button>
           <Button size="icon" variant="ghost" aria-label="Export" onClick={() => setExportOpen(true)} disabled={!list.length}><Download /></Button>
         </>} />
@@ -98,7 +106,7 @@ export default function Transactions() {
         ) : groups.map((g) => (
           <div key={g.day} className="mb-3">
             {g.day && <p className="mb-1.5 px-1 text-xs font-medium text-muted-foreground">{g.day}</p>}
-            <Card className="divide-y overflow-hidden">{g.items.map((t) => <TxnRow key={t.id} t={t} />)}</Card>
+            <Card className="divide-y overflow-hidden">{g.items.map((t) => <TxnRow key={t.id} t={t} selected={selected.has(t.id)} onToggle={selecting ? () => toggle(t.id) : undefined} />)}</Card>
           </div>
         ))}
       </div>
@@ -142,7 +150,34 @@ export default function Transactions() {
           <Button variant="outline" onClick={async () => { await exportExcel(list, categories, sources, `spendwise-${stamp}.xlsx`); setExportOpen(false); toast('Excel file exported') }}><FileSpreadsheet />Excel (.xlsx)</Button>
         </div>
       </Sheet>
-      <Fab />
-    </div>
+      {selecting ? (
+        <div className="fixed inset-x-0 bottom-[4.5rem] z-40 mx-auto max-w-lg px-3">
+          <div className="flex items-center gap-1 rounded-2xl border bg-card p-2 shadow-lg">
+            <button className="px-2 text-xs font-medium text-primary" onClick={() => setSelected(selected.size === list.length ? new Set() : new Set(list.map((t) => t.id)))}>
+              {selected.size === list.length ? 'None' : 'All'}</button>
+            <span className="flex-1 text-sm font-medium">{selected.size} selected</span>
+            <Button size="sm" variant="ghost" disabled={!selected.size} onClick={() => setBulkCat(true)}><Tags />Category</Button>
+            <Button size="sm" variant="ghost" disabled={!selected.size} aria-label="Exclude or include in reports" onClick={() => {
+              const ids = [...selected]; const allEx = ids.every((id) => transactions.find((t) => t.id === id)?.excludeFromReports)
+              bulkUpdate(ids, { excludeFromReports: !allEx }); toast(`${allEx ? 'Included' : 'Excluded'} ${ids.length} from reports`); endSelect()
+            }}><EyeOff /></Button>
+            <Button size="sm" variant="ghost" className="text-destructive" disabled={!selected.size} aria-label="Delete" onClick={() => setBulkDel(true)}><Trash2 /></Button>
+          </div>
+        </div>
+      ) : <Fab />}
+
+      <Sheet open={bulkCat} onOpenChange={setBulkCat} title={`Set category for ${selected.size}`}>
+        <div className="grid max-h-[60vh] gap-1 overflow-y-auto">
+          {categories.filter((c) => !c.parentId && !c.isIncome).map((c) => (
+            <button key={c.id} className="flex items-center gap-3 rounded-xl px-2 py-2.5 text-left text-sm hover:bg-muted" onClick={() => {
+              bulkUpdate([...selected], { categoryId: c.id }); setBulkCat(false); toast(`Moved ${selected.size} to ${c.name}`); endSelect()
+            }}><span className="size-3 rounded-full" style={{ background: c.color }} />{c.name}</button>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">Income and split transactions keep their own categories.</p>
+      </Sheet>
+      <Confirm open={bulkDel} onOpenChange={setBulkDel} title={`Delete ${selected.size} transactions?`} body="This can’t be undone."
+        onConfirm={() => { const n = selected.size; bulkDelete([...selected]); toast(`Deleted ${n} transactions`); endSelect() }} />
+    </div></PullToRefresh>
   )
 }

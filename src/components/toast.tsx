@@ -10,7 +10,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={show}>
       {children}
       {msg && (
-        <div role="status" className="fixed inset-x-0 bottom-24 z-[60] mx-auto w-fit max-w-[90%] rounded-xl bg-foreground px-4 py-2.5 text-sm text-background shadow-lg animate-in fade-in slide-in-from-bottom-2">
+        <div role="status" className="fixed inset-x-0 bottom-36 z-[60] mx-auto w-fit max-w-[90%] rounded-xl bg-foreground px-4 py-2.5 text-sm text-background shadow-lg animate-in fade-in slide-in-from-bottom-2">
           {msg}
         </div>
       )}

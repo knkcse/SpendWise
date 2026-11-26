@@ -66,7 +66,7 @@ export default function Profile() {
           <button disabled={!s.transactions.length} onClick={() => { download(`spendwise-transactions-${format(new Date(), 'yyyy-MM-dd')}.csv`, toCSV(s.transactions, s.categories, s.sources)); toast('CSV exported') }} className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm disabled:opacity-50"><Download className="size-4 text-muted-foreground" />Export transactions (CSV)</button>
           <button onClick={() => setDel(true)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm text-destructive"><Trash2 className="size-4" />{s.repoKind === 'supabase' ? 'Delete my account and data' : 'Delete all my data'}</button>
         </Card>
-        <p className="pb-4 text-center text-xs text-muted-foreground">SpendWise 0.2.0 · Phase 2</p>
+        <p className="pb-4 text-center text-xs text-muted-foreground">SpendWise 0.3.0 · Phase 3</p>
       </div>
       <Confirm open={del} onOpenChange={setDel} title="Delete all data?" confirmLabel="Delete everything"
         body={s.repoKind === 'supabase' ? `This permanently deletes your SpendWise account and all ${s.transactions.length} transactions, budgets, categories and settings stored in it.` : `This permanently removes ${s.transactions.length} transactions, your budgets, categories and settings from this device.`}

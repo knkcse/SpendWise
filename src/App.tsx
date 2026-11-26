@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { useStore } from '@/data/store'
 import { useApplyTheme } from '@/hooks/useTheme'
+import { useAutoRefresh } from '@/hooks/useAutoRefresh'
 import { supabase } from '@/lib/supabase'
 import { Login, Splash } from '@/screens/Auth'
 import Dashboard from '@/screens/Dashboard'
@@ -45,6 +46,7 @@ function ScrollTop() {
 
 export default function App() {
   useApplyTheme()
+  useAutoRefresh()
   return (
     <>
       <ScrollTop />

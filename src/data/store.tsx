@@ -9,7 +9,7 @@ import type { Repository, Snapshot, SyncStatus } from './repository'
 
 export type AddResult = { ok: true; txn: Transaction } | { ok: false; reason: 'duplicate'; existing: Transaction }
 
-function makeActions(get: () => Snapshot, set: (fn: (s: Snapshot) => Snapshot) => void) {
+export function makeActions(get: () => Snapshot, set: (fn: (s: Snapshot) => Snapshot) => void) {
   const now = () => new Date().toISOString()
 
   const learn = (s: Snapshot, merchant: string, categoryId: string): Snapshot => {
@@ -71,6 +71,28 @@ function makeActions(get: () => Snapshot, set: (fn: (s: Snapshot) => Snapshot) =
         return next
       })
     },
+    /** Apply one change to many transactions (bulk actions). Category changes are learned per merchant. */
+    bulkUpdate(ids: string[], patch: Partial<Pick<Transaction, 'categoryId' | 'excludeFromReports' | 'scope'>>) {
+      const set_ = new Set(ids)
+      set((s) => {
+        let next: Snapshot = { ...s, transactions: s.transactions.map((t) => {
+          if (!set_.has(t.id)) return t
+          const upd: Transaction = { ...t, ...patch, updatedAt: now() }
+          if (patch.categoryId !== undefined) {
+            if (t.splits.length || t.type === 'credit') return t // splits / income keep their own categories
+            upd.subcategoryId = null
+            if (patch.categoryId) upd.status = 'confirmed'
+          }
+          return upd
+        }) }
+        if (patch.categoryId) for (const t of s.transactions.filter((t) => set_.has(t.id) && !t.splits.length && t.type === 'debit')) next = learn(next, t.merchantName, patch.categoryId)
+        return next
+      })
+    },
+    bulkDelete: (ids: string[]) => { const d = new Set(ids); set((s) => ({ ...s, transactions: s.transactions.filter((t) => !d.has(t.id)) })) },
+    /** Other un-split expenses from the same merchant, for "apply to all" */
+    sameMerchant: (t: Transaction) => get().transactions.filter((x) => x.id !== t.id && x.type === 'debit' && !x.splits.length && merchantKey(x.merchantName) === merchantKey(t.merchantName)),
+    deleteRule: (key: string) => set((s) => ({ ...s, rules: s.rules.filter((r) => r.merchantKey !== key) })),
     deleteTransaction: (id: string) => set((s) => ({ ...s, transactions: s.transactions.filter((t) => t.id !== id) })),
 
     addCategory(c: Omit<Category, 'id' | 'userId'>) {
@@ -131,7 +153,7 @@ function makeActions(get: () => Snapshot, set: (fn: (s: Snapshot) => Snapshot) =
   }
 }
 
-type Actions = ReturnType<typeof makeActions>
+type Actions = ReturnType<typeof makeActions> & { refresh: () => Promise<boolean> }
 type Store = Snapshot & Actions & { ready: boolean; loadError: string | null; repoKind: Repository['kind']; sync: SyncStatus }
 
 const Ctx = createContext<Store | null>(null)
@@ -147,16 +169,25 @@ export function StoreProvider({ children, repo }: { children: ReactNode; repo: R
   useEffect(() => {
     const r = repoRef.current
     const off = r.onStatus?.(setSync)
+    const offSnap = r.onSnapshot?.((next) => { ref.current = next; setSnap(next) })
     r.load().then((s) => { ref.current = s; setSnap(s); setReady(true) })
       .catch((e) => setLoadError(e?.message ?? String(e)))
-    return () => { off?.(); r.dispose?.() }
+    return () => { off?.(); offSnap?.(); r.dispose?.() }
   }, [])
 
   const set = useCallback((fn: (s: Snapshot) => Snapshot) => {
     const next = fn(ref.current); ref.current = next; setSnap(next)
     void repoRef.current.save(next)
   }, [])
-  const actions = useMemo(() => makeActions(() => ref.current, set), [set])
+  const actions = useMemo(() => ({
+    ...makeActions(() => ref.current, set),
+    /** Pull the latest data from the server. Resolves false if offline or changes are pending. */
+    refresh: async (): Promise<boolean> => {
+      const next = await repoRef.current.refresh?.().catch(() => null)
+      if (!next) return false
+      ref.current = next; setSnap(next); return true
+    },
+  }), [set])
   const value = useMemo(() => ({ ...snap, ...actions, ready, loadError, sync, repoKind: repoRef.current.kind }), [snap, actions, ready, loadError, sync])
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

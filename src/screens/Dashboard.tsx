@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { PullToRefresh } from '@/components/PullToRefresh'
 import { useMemo } from 'react'
 import { AlertCircle, ArrowDownRight, ArrowUpRight, Bell, Plus, Receipt, Wallet } from 'lucide-react'
 import { endOfDay } from 'date-fns'
@@ -47,7 +48,7 @@ export default function Dashboard() {
   const hello = now.getHours() < 12 ? 'Good morning' : now.getHours() < 17 ? 'Good afternoon' : 'Good evening'
 
   return (
-    <div>
+    <PullToRefresh><div>
       <PageHeader title={`${hello}${profile.fullName ? ', ' + profile.fullName.split(' ')[0] : ''}`} subtitle="Here’s where your money went"
         right={<Button size="icon" variant="ghost" asChild aria-label="Budget alerts"><Link to="/budgets"><Bell /></Link></Button>} />
 
@@ -118,7 +119,7 @@ export default function Dashboard() {
       </div>
 
       <Fab />
-    </div>
+    </div></PullToRefresh>
   )
 }
 

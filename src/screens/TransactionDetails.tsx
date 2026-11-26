@@ -19,9 +19,10 @@ export default function TransactionDetails() {
   const { id } = useParams()
   const nav = useNavigate()
   const toast = useToast()
-  const { transactions, categories, updateTransaction, deleteTransaction } = useStore()
+  const { transactions, categories, updateTransaction, deleteTransaction, sameMerchant, bulkUpdate } = useStore()
   const { cat, catName, src } = useLookups()
   const [del, setDel] = useState(false)
+  const [applyAll, setApplyAll] = useState<{ categoryId: string; ids: string[] } | null>(null)
   const t = transactions.find((x) => x.id === id)
   if (!t) return <Page><PageHeader title="Not found" back /><p className="px-4 text-sm text-muted-foreground">This transaction no longer exists.</p></Page>
   const c = cat(t.categoryId)
@@ -53,7 +54,13 @@ export default function TransactionDetails() {
         {!t.splits.length && (
           <Card className="p-4">
             <label htmlFor="quick-cat" className="mb-1.5 block text-xs font-medium text-muted-foreground">Category</label>
-            <Select id="quick-cat" value={t.categoryId ?? ''} onChange={(e) => { updateTransaction(t.id, { categoryId: e.target.value || null, subcategoryId: null }); toast('Category updated. SpendWise will remember this merchant.') }}>
+            <Select id="quick-cat" value={t.categoryId ?? ''} onChange={(e) => {
+              const categoryId = e.target.value || null
+              updateTransaction(t.id, { categoryId, subcategoryId: null })
+              const others = categoryId ? sameMerchant(t).filter((x) => x.categoryId !== categoryId) : []
+              if (others.length) setApplyAll({ categoryId: categoryId!, ids: others.map((x) => x.id) })
+              else toast('Category updated. SpendWise will remember this merchant.')
+            }}>
               <option value="">Uncategorised</option>
               {categories.filter((x) => !x.parentId && x.isIncome === (t.type === 'credit')).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             </Select>
@@ -83,6 +90,10 @@ export default function TransactionDetails() {
         </div>
         <Button variant="ghost" className="w-full text-destructive" onClick={() => setDel(true)}><Trash2 />Delete transaction</Button>
       </div>
+      <Confirm open={!!applyAll} onOpenChange={(o) => !o && setApplyAll(null)} destructive={false} confirmLabel="Update all"
+        title={`Update other ${t.merchantName} payments?`}
+        body={applyAll ? `${applyAll.ids.length} other transaction${applyAll.ids.length === 1 ? '' : 's'} from ${t.merchantName} ${applyAll.ids.length === 1 ? 'has' : 'have'} a different category. Set ${applyAll.ids.length === 1 ? 'it' : 'them'} to ${catName(applyAll.categoryId)} too? New payments from this merchant will use it automatically either way.` : ''}
+        onConfirm={() => { if (applyAll) { bulkUpdate(applyAll.ids, { categoryId: applyAll.categoryId }); toast(`Updated ${applyAll.ids.length + 1} transactions`) } }} />
       <Confirm open={del} onOpenChange={setDel} title="Delete this transaction?" body={`${t.merchantName} · ${formatINR(t.amount)}. This can’t be undone.`}
         onConfirm={() => { deleteTransaction(t.id); toast('Transaction deleted'); nav('/transactions', { replace: true }) }} />
     </Page>
