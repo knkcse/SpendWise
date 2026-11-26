@@ -1,6 +1,6 @@
 import type { Category, PaymentSource, Transaction } from './types'
 
-const COLS = ['date', 'type', 'amount', 'merchant', 'category', 'payment_method', 'payment_source', 'reference', 'description', 'notes', 'scope', 'excluded'] as const
+export const COLS = ['date', 'type', 'amount', 'merchant', 'category', 'payment_method', 'payment_source', 'reference', 'description', 'notes', 'scope', 'excluded', 'split_parts'] as const
 
 function esc(v: unknown): string {
   const s = v == null ? '' : String(v)
@@ -10,11 +10,21 @@ function esc(v: unknown): string {
 }
 
 export function toCSV(ts: Transaction[], cats: Category[], sources: PaymentSource[]): string {
+  return [COLS.join(','), ...txnRows(ts, cats, sources).map((r) => r.map(esc).join(','))].join('\n')
+}
+
+/** "Groceries 10000; Household 5000 (note)" for a split transaction, '' otherwise. */
+export function splitSummary(t: Transaction, cats: Category[]): string {
+  const cn = (id: string | null) => cats.find((c) => c.id === id)?.name ?? 'Uncategorised'
+  return t.splits.map((s) => `${cn(s.categoryId)} ${s.amount}${s.note ? ` (${s.note})` : ''}`).join('; ')
+}
+
+/** One row per transaction in COLS order. A split transaction has category "Split" and its parts in split_parts. */
+export function txnRows(ts: Transaction[], cats: Category[], sources: PaymentSource[]): Array<Array<string | number | boolean | null | undefined>> {
   const cn = (id: string | null) => cats.find((c) => c.id === id)?.name ?? ''
   const sn = (id: string | null) => sources.find((s) => s.id === id)?.displayName ?? ''
-  const rows = ts.map((t) => [t.occurredAt, t.type, t.amount, t.merchantName, cn(t.categoryId), t.paymentMethod, sn(t.paymentSourceId),
-    t.transactionReference, t.description, t.notes, t.scope, t.excludeFromReports].map(esc).join(','))
-  return [COLS.join(','), ...rows].join('\n')
+  return ts.map((t) => [t.occurredAt, t.type, t.amount, t.merchantName, t.splits.length ? 'Split' : cn(t.categoryId), t.paymentMethod, sn(t.paymentSourceId),
+    t.transactionReference, t.description, t.notes, t.scope, t.excludeFromReports, splitSummary(t, cats)])
 }
 
 /** RFC-4180-ish parser (quotes, escaped quotes, CRLF) */

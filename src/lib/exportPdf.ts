@@ -1,6 +1,7 @@
 import { format } from 'date-fns'
 import type { Category, PaymentSource, Transaction } from './types'
 import { byCategory, expenses, income, sum } from './analytics'
+import type { RowInput } from 'jspdf-autotable'
 
 // Built-in PDF fonts have no ₹ glyph, so amounts use "Rs" with Indian grouping.
 const n2 = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -44,11 +45,20 @@ export async function buildStatementPdf(ts: Transaction[], cats: Category[], sou
     body: cats_.length ? cats_.map(([id, v]) => [catName(id), rs(v), spent ? `${Math.round((v / spent) * 100)}%` : '-']) : [['No expenses in this period', '', '']],
   })
 
-  const rows = [...ts].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt)).map((t) => [
-    format(new Date(t.occurredAt), 'dd MMM yyyy, HH:mm'), t.merchantName + (t.excludeFromReports ? ' *' : ''),
-    t.splits.length ? 'Split' : catName(t.categoryId), srcName(t.paymentSourceId) || t.paymentMethod.toUpperCase().replace('_', ' '),
-    (t.type === 'credit' ? '+ ' : '- ') + rs(t.amount),
-  ])
+  // Split transactions get one indented, lighter sub-row per part.
+  const partStyle = { textColor: 90, fontStyle: 'italic' as const, fillColor: [246, 248, 248] as [number, number, number] }
+  const rows: RowInput[] = []
+  for (const t of [...ts].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))) {
+    rows.push([
+      format(new Date(t.occurredAt), 'dd MMM yyyy, HH:mm'), t.merchantName + (t.excludeFromReports ? ' *' : ''),
+      t.splits.length ? `Split (${t.splits.length} parts)` : catName(t.categoryId), srcName(t.paymentSourceId) || t.paymentMethod.toUpperCase().replace('_', ' '),
+      (t.type === 'credit' ? '+ ' : '- ') + rs(t.amount),
+    ])
+    for (const p of t.splits) rows.push([
+      { content: '', styles: partStyle }, { content: `    - split part${p.note ? `: ${p.note}` : ''}`, styles: partStyle },
+      { content: catName(p.categoryId), styles: partStyle }, { content: '', styles: partStyle }, { content: rs(p.amount), styles: { ...partStyle, halign: 'right' } },
+    ])
+  }
   autoTable(doc, {
     startY: ((doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY) + 20,
     head: [['Date', 'Merchant', 'Category', 'Paid via', 'Amount']], theme: 'grid', headStyles: { fillColor: teal }, styles: { fontSize: 8.5, cellPadding: 4 },
