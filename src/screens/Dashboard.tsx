@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { PullToRefresh } from '@/components/PullToRefresh'
 import { useMemo } from 'react'
 import { AlertCircle, ArrowDownRight, ArrowUpRight, Bell, CalendarDays, CalendarRange, Plus, Receipt, Wallet } from 'lucide-react'
@@ -24,6 +24,7 @@ export default function Dashboard() {
   const { transactions: ts, profile, prefs, budgets } = useStore()
   const { cat, catName, src } = useLookups()
   const f = useDateFilter('month', prefs.weekStartsOn)
+  const nav = useNavigate()
   const now = new Date()
 
   const weekRange = rangeFor('week', now, prefs.weekStartsOn)
@@ -39,7 +40,7 @@ export default function Dashboard() {
       periodTotal: p.spent, big: p.biggest, count: p.count,
       weekly: fillDays(wk.data, { from: weekRange.from, to: weekRange.to }).map((d) => ({ ...d, label: d.label.split(' ')[0] })),
       trendChart: o.trend.map((m) => ({ month: format(new Date(m.month + '-01T00:00:00'), 'MMM'), expenses: m.spent, income: m.income })),
-      cats: p.byCategory.map((c) => ({ name: catName(c.categoryId), value: c.total, color: cat(c.categoryId)?.color ?? '#94a3b8' })),
+      cats: p.byCategory.map((c) => ({ id: c.categoryId, name: catName(c.categoryId), value: c.total, color: cat(c.categoryId)?.color ?? '#94a3b8' })),
       apps: p.bySource.map((x) => ({ key: src(x.sourceId)?.displayName ?? 'Other / manual', total: x.total, count: x.count })),
       merchants: p.topMerchants.slice(0, 5),
       review: ts.filter((t) => t.status === 'needs_review').length,
@@ -101,7 +102,7 @@ export default function Dashboard() {
         </div>
 
         <Card><CardHeader><CardTitle>Spending by category</CardTitle></CardHeader>
-          <CardContent>{s.cats.length ? <Donut data={s.cats} total={s.periodTotal} /> : <p className="py-6 text-center text-sm text-muted-foreground">No expenses in this period</p>}</CardContent></Card>
+          <CardContent>{s.cats.length ? <Donut data={s.cats} total={s.periodTotal} onView={(i) => nav(categoryLink(s.cats[i].id, f.range, PRESET_LABELS[f.preset]))} /> : <p className="py-6 text-center text-sm text-muted-foreground">No expenses in this period</p>}</CardContent></Card>
 
         <Card><CardHeader><CardTitle>By payment app</CardTitle></CardHeader>
           <CardContent>{s.apps.length ? <RankBars rows={s.apps.slice(0, 6).map((a) => ({ label: a.key, value: a.total, sub: `· ${a.count}` }))} /> : <p className="py-6 text-center text-sm text-muted-foreground">No expenses in this period</p>}</CardContent></Card>
@@ -132,6 +133,10 @@ export default function Dashboard() {
       <Fab />
     </div></PullToRefresh>
   )
+}
+
+export function categoryLink(id: string | null, r: { from: Date; to: Date }, label: string) {
+  return `/reports/category?c=${id ?? 'none'}&from=${r.from.getTime()}&to=${r.to.getTime()}&label=${encodeURIComponent(label)}`
 }
 
 function formatPctShort(curr: number, prev: number) {

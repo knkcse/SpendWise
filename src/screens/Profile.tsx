@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
-import { BellRing, CalendarDays, ChevronRight, Cloud, CloudOff, Download, LogOut, RefreshCw, Smartphone as Phone, FolderTree, Moon, Repeat, Smartphone, Trash2, BarChart3 } from 'lucide-react'
+import { BellRing, CalendarDays, ChevronRight, Cloud, CloudOff, Download, LogOut, RefreshCw, Smartphone as Phone, FolderTree, Moon, Repeat, Smartphone, Trash2, BarChart3, Sparkles } from 'lucide-react'
 import { PageHeader } from '@/components/layout/AppShell'
 import { Card } from '@/components/ui/card'
 import { Confirm, Segmented, Switch } from '@/components/ui/misc'
@@ -59,6 +59,9 @@ export default function Profile() {
             <Segmented value={String(s.prefs.weekStartsOn) as '0' | '1'} onChange={(v) => s.setPrefs({ weekStartsOn: Number(v) as 0 | 1 })} options={[{ value: '1', label: 'Monday' }, { value: '0', label: 'Sunday' }]} /></div>
           <div className="flex items-center justify-between p-4"><p className="flex items-center gap-2 text-sm font-medium"><BellRing className="size-4 text-muted-foreground" />Budget alerts</p>
             <Switch checked={s.prefs.budgetAlerts} onCheckedChange={(c) => s.setPrefs({ budgetAlerts: c })} /></div>
+          <div className="flex items-center justify-between gap-3 p-4"><p className="flex items-center gap-2 text-sm font-medium"><Sparkles className="size-4 text-muted-foreground" />AI insights
+            <span className="sr-only">: summaries written from your totals on the server</span></p>
+            <Switch checked={s.prefs.aiInsightsEnabled} onCheckedChange={(c) => s.setPrefs({ aiInsightsEnabled: c })} aria-label="AI insights" /></div>
         </Card>
 
         <Card className="divide-y">

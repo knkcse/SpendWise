@@ -2,6 +2,7 @@ import { Area, AreaChart, Bar, BarChart, Cell, Pie, PieChart, ResponsiveContaine
 import { useState } from 'react'
 import { formatINR, formatINRCompact } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { ChevronRight } from 'lucide-react'
 
 const axis = { fontSize: 11, fill: 'hsl(var(--muted-foreground))' }
 const tip = {
@@ -54,11 +55,12 @@ export function TrendArea({ data, height = 180 }: { data: Array<{ month: string;
 export interface Slice { name: string; value: number; color: string }
 
 /** Tap a slice (or a legend row) to show its amount in the centre; tap again to go back to the total. */
-export function Donut({ data, total }: { data: Slice[]; total: number }) {
+export function Donut({ data, total, onView }: { data: Slice[]; total: number; onView?: (index: number) => void }) {
   const [active, setActive] = useState<number | null>(null)
   const sel = active !== null ? data[active] : undefined
   const toggle = (i: number) => setActive((a) => (a === i ? null : i))
   return (
+    <div>
     <div className="flex items-center gap-4">
       <div className="relative size-36 shrink-0">
         <ResponsiveContainer width="100%" height="100%">
@@ -90,6 +92,12 @@ export function Donut({ data, total }: { data: Slice[]; total: number }) {
           </li>
         ))}
       </ul>
+    </div>
+    {onView && (
+      <button type="button" onClick={() => onView(active ?? 0)} className="mt-3 flex w-full items-center justify-center gap-1 rounded-xl border py-2 text-xs font-medium text-primary active:bg-muted">
+        {sel ? `See ${sel.name} transactions` : `See ${data[0]?.name ?? ''} transactions`}<ChevronRight className="size-3.5" />
+      </button>
+    )}
     </div>
   )
 }

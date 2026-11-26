@@ -162,3 +162,20 @@ export function deviceTimeZone(): string {
   try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz } catch { /* keep default */ }
   return tz === 'Asia/Calcutta' ? 'Asia/Kolkata' : tz
 }
+
+const METHOD_LABELS: Record<string, string> = { upi: 'UPI', credit_card: 'Credit card', debit_card: 'Debit card', net_banking: 'Net banking', cash: 'Cash', wallet: 'Wallet', other: 'Other' }
+
+/** Expenses by payment method and by personal/business, same rules as the summary (excluded rows left out). */
+export function breakdowns(all: Transaction[], r: DateRange) {
+  const from = r.from.getTime(), to = r.to.getTime()
+  const ex = all.filter((t) => { const x = Date.parse(t.occurredAt); return !t.excludeFromReports && t.type === 'debit' && x >= from && x <= to })
+  const group = (key: (t: Transaction) => string, label: (k: string) => string) => {
+    const m = new Map<string, Bucket>()
+    for (const t of ex) bucket(m, key(t), t.amount)
+    return [...m].map(([k, v]) => ({ key: k, label: label(k), ...v })).sort(byTotal)
+  }
+  return {
+    methods: group((t) => t.paymentMethod, (k) => METHOD_LABELS[k] ?? k),
+    scopes: group((t) => t.scope, (k) => (k === 'business' ? 'Business' : 'Personal')),
+  }
+}

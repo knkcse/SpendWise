@@ -108,7 +108,7 @@ runs on the phone (before queueing), in CSV import preview, and in the edge func
 | 2 ✅ | Supabase auth + `SupabaseRepository`, apply migration, migrate local data on first sign-in | Supabase project URL + anon key (and DB access to run the migration) |
 | 3 ✅ | Expense management on Supabase (splits, rules, import, bulk edits, integrity triggers) | — |
 | 4 ✅ | Analytics in Postgres (`analytics_summary`, `analytics_overview` RPCs) with an identical on-device fallback (`src/lib/summary.ts`); parity test `src/lib/summary.pg.test.ts` (PGTEST=1) | Run phase4-analytics.sql |
-| 5 | `generate-insights` edge function | AI API key, stored as a Supabase secret |
+| 5 ✅ | `supabase/functions/generate-insights` (facts computed from SQL, model only phrases them; every ₹/% in model text checked against facts; provider set by `AI_PROVIDER`/`AI_MODEL` secrets: gemini, anthropic, openai-compatible). Deno tests: `deno test --allow-env supabase/functions/generate-insights/`. Also category drill-down, custom-range report, payment-method and personal/business breakdowns | `GEMINI_API_KEY` secret; deploy the function |
 | 6 | Budget alerts as local notifications; recurring detection cron | — |
 | 7 | Kotlin `NotificationListenerService` + Capacitor plugin + parsers per app | Real notification samples (redacted) and a real phone for testing |
 | 8 | Room queue, WorkManager sync, ingest function | — |

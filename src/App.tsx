@@ -12,7 +12,8 @@ import TransactionForm from '@/screens/TransactionForm'
 import TransactionDetails from '@/screens/TransactionDetails'
 import ImportCSV from '@/screens/ImportCSV'
 import Categories from '@/screens/Categories'
-import { MonthlyReport, WeeklyReport } from '@/screens/Reports'
+import { CustomReport, MonthlyReport, WeeklyReport } from '@/screens/Reports'
+import CategoryDetail from '@/screens/CategoryDetail'
 import Insights from '@/screens/Insights'
 import Budgets from '@/screens/Budgets'
 import Recurring from '@/screens/Recurring'
@@ -68,6 +69,8 @@ export default function App() {
         <Route path="/categories" element={<RequireOnboarded><Categories /></RequireOnboarded>} />
         <Route path="/reports/weekly" element={<RequireOnboarded><WeeklyReport /></RequireOnboarded>} />
         <Route path="/reports/monthly" element={<RequireOnboarded><MonthlyReport /></RequireOnboarded>} />
+        <Route path="/reports/custom" element={<RequireOnboarded><CustomReport /></RequireOnboarded>} />
+        <Route path="/reports/category" element={<RequireOnboarded><CategoryDetail /></RequireOnboarded>} />
         <Route path="/recurring" element={<RequireOnboarded><Recurring /></RequireOnboarded>} />
         <Route path="/settings/detection" element={<RequireOnboarded><DetectionSettings /></RequireOnboarded>} />
         <Route path="*" element={<Navigate to="/" replace />} />
