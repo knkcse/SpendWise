@@ -105,7 +105,7 @@ runs on the phone (before queueing), in CSV import preview, and in the edge func
 | Phase | Scope | Needs from Rakesh |
 |---|---|---|
 | 1 ✅ | All screens, navigation, on-device data, analytics, CSV/Excel, budgets, recurring, categories | — |
-| 2 | Supabase auth + `SupabaseRepository`, apply migration, migrate local data on first sign-in | Supabase project URL + anon key (and DB access to run the migration) |
+| 2 ✅ | Supabase auth + `SupabaseRepository`, apply migration, migrate local data on first sign-in | Supabase project URL + anon key (and DB access to run the migration) |
 | 3 | Expense management on Supabase (splits, rules, import) | — |
 | 4 | Analytics via SQL views for large histories | — |
 | 5 | `generate-insights` edge function | AI API key, stored as a Supabase secret |

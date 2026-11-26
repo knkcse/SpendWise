@@ -1,6 +1,6 @@
 import type { Budget, Category, MerchantRule, PaymentSource, Preferences, Profile, RecurringPayment, Transaction } from '@/lib/types'
 
-/** Everything the app persists. Phase 1: LocalRepository (on-device). Phase 2: SupabaseRepository. */
+/** Everything the app persists. LocalRepository = device only; SupabaseRepository = cloud with an on-device cache. */
 export interface Snapshot {
   profile: Profile
   transactions: Transaction[]
@@ -12,9 +12,13 @@ export interface Snapshot {
   prefs: Preferences
 }
 
+export interface SyncStatus { state: 'idle' | 'syncing' | 'offline' | 'error'; pending: boolean; message?: string; lastSyncedAt?: string }
+
 export interface Repository {
   readonly kind: 'local' | 'supabase'
   load(): Promise<Snapshot>
   save(next: Snapshot): Promise<void>
   clear(): Promise<void>
+  onStatus?(cb: (s: SyncStatus) => void): () => void
+  dispose?(): void
 }

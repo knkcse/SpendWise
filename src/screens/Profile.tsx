@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
-import { BellRing, CalendarDays, ChevronRight, Database, Download, FolderTree, Moon, Repeat, Smartphone, Trash2, BarChart3 } from 'lucide-react'
+import { BellRing, CalendarDays, ChevronRight, Cloud, CloudOff, Download, LogOut, RefreshCw, Smartphone as Phone, FolderTree, Moon, Repeat, Smartphone, Trash2, BarChart3 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/AppShell'
 import { Card } from '@/components/ui/card'
 import { Input, Label } from '@/components/ui/input'
 import { Confirm, Segmented, Switch } from '@/components/ui/misc'
 import { useToast } from '@/components/toast'
 import { useStore } from '@/data/store'
+import { supabase } from '@/lib/supabase'
+import { Button } from '@/components/ui/button'
 import { download, toCSV } from '@/lib/csv'
 
 export default function Profile() {
@@ -42,12 +44,7 @@ export default function Profile() {
           </div>
         </Card>
 
-        <Card className="flex items-start gap-3 p-4 text-sm">
-          <Database className="mt-0.5 size-4 shrink-0 text-primary" />
-          <p className="text-muted-foreground">{s.repoKind === 'local'
-            ? 'Your data is stored only on this device. Cloud sync and sign-in arrive in Phase 2. Download a backup to keep a copy.'
-            : `Signed in as ${s.profile.email}. Data syncs securely to your account.`}</p>
-        </Card>
+        <AccountCard />
 
         <Card className="divide-y">
           {links.map(({ to, label, icon: I }) => (
@@ -67,13 +64,42 @@ export default function Profile() {
         <Card className="divide-y">
           <button onClick={exportAll} className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm"><Download className="size-4 text-muted-foreground" />Download all my data (JSON)</button>
           <button disabled={!s.transactions.length} onClick={() => { download(`spendwise-transactions-${format(new Date(), 'yyyy-MM-dd')}.csv`, toCSV(s.transactions, s.categories, s.sources)); toast('CSV exported') }} className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm disabled:opacity-50"><Download className="size-4 text-muted-foreground" />Export transactions (CSV)</button>
-          <button onClick={() => setDel(true)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm text-destructive"><Trash2 className="size-4" />Delete all my data</button>
+          <button onClick={() => setDel(true)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm text-destructive"><Trash2 className="size-4" />{s.repoKind === 'supabase' ? 'Delete my account and data' : 'Delete all my data'}</button>
         </Card>
-        <p className="pb-4 text-center text-xs text-muted-foreground">SpendWise 0.1.0 · Phase 1</p>
+        <p className="pb-4 text-center text-xs text-muted-foreground">SpendWise 0.2.0 · Phase 2</p>
       </div>
       <Confirm open={del} onOpenChange={setDel} title="Delete all data?" confirmLabel="Delete everything"
-        body={`This permanently removes ${s.transactions.length} transactions, your budgets, categories and settings from this device.`}
-        onConfirm={() => { s.resetAll(); nav('/login', { replace: true }) }} />
+        body={s.repoKind === 'supabase' ? `This permanently deletes your SpendWise account and all ${s.transactions.length} transactions, budgets, categories and settings stored in it.` : `This permanently removes ${s.transactions.length} transactions, your budgets, categories and settings from this device.`}
+        onConfirm={async () => {
+          if (s.repoKind === 'supabase' && supabase) {
+            const { error } = await supabase.rpc('delete_my_account')
+            if (error) return toast(`Couldn’t delete account: ${error.message}`)
+            await supabase.auth.signOut()
+          } else s.resetAll()
+          nav('/login', { replace: true })
+        }} />
     </div>
+  )
+}
+
+function AccountCard() {
+  const s = useStore()
+  const nav = useNavigate()
+  if (s.repoKind === 'local') return (
+    <Card className="space-y-3 p-4 text-sm">
+      <p className="flex items-center gap-2 font-medium"><Phone className="size-4 text-muted-foreground" />Device-only mode</p>
+      <p className="text-muted-foreground">Your data is stored only on this phone and isn’t backed up. Sign in or create an account to back it up and use it on other devices; you can bring this data with you.</p>
+      {supabase && <Button className="w-full" onClick={() => nav('/login')}>Sign in or create account</Button>}
+    </Card>
+  )
+  const { state, pending, message, lastSyncedAt } = s.sync
+  const label = state === 'syncing' ? 'Syncing…' : state === 'offline' ? 'Offline. Changes are saved on this phone and will sync later.'
+    : state === 'error' ? `Sync failed: ${message ?? 'unknown error'}. Will retry.` : pending ? 'Changes waiting to sync' : `All changes synced${lastSyncedAt ? ` · ${format(new Date(lastSyncedAt), 'h:mm a')}` : ''}`
+  return (
+    <Card className="space-y-3 p-4 text-sm">
+      <p className="flex items-center gap-2 font-medium">{state === 'offline' || state === 'error' ? <CloudOff className="size-4 text-warning" /> : <Cloud className="size-4 text-primary" />}Signed in as {s.profile.email}</p>
+      <p className={`flex items-center gap-2 text-xs ${state === 'error' ? 'text-destructive' : 'text-muted-foreground'}`}>{state === 'syncing' && <RefreshCw className="size-3 animate-spin" />}{label}</p>
+      <Button variant="outline" className="w-full" onClick={async () => { await supabase?.auth.signOut(); nav('/login', { replace: true }) }}><LogOut />Sign out</Button>
+    </Card>
   )
 }

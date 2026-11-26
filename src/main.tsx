@@ -2,7 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { HashRouter, MemoryRouter } from 'react-router-dom'
 import App from './App'
-import { StoreProvider } from './data/store'
+import { AuthProvider } from './data/auth'
 import { ToastProvider } from './components/toast'
 import './index.css'
 
@@ -13,11 +13,11 @@ const Router = import.meta.env.VITE_ROUTER === 'memory' ? MemoryRouter : HashRou
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <Router>
-      <StoreProvider>
+      <AuthProvider>
         <ToastProvider>
           <App />
         </ToastProvider>
-      </StoreProvider>
+      </AuthProvider>
     </Router>
   </React.StrictMode>,
 )

@@ -3,9 +3,10 @@
 AI-assisted personal expense tracker for India. React + TypeScript + Tailwind (shadcn-style)
 in a Capacitor Android shell, with Supabase as the backend.
 
-**Status: Phase 1.** Every screen works against on-device storage. Sign-in, cloud sync, AI
-summaries and automatic payment detection are *not* implemented yet and the app says so
-where they would appear. See `docs/ARCHITECTURE.md` for the design and phase plan.
+**Status: Phase 2.** Email sign-in with Supabase; data syncs to Postgres (RLS per user) with an
+on-device cache, so changes made offline sync later. "Use without an account" keeps data on the
+phone only and can be moved into an account after sign-in. AI summaries and automatic payment
+detection are *not* implemented yet and the app says so where they would appear. See `docs/ARCHITECTURE.md` for the design and phase plan.
 
 ## Run it
 
@@ -18,9 +19,16 @@ npm run build      # type check + production build into dist/
 
 ## Database
 
-`supabase/migrations/20261125000000_init.sql` creates all tables, indexes, RLS policies,
-the sign-up trigger and default categories. Apply with `supabase db push` once a project
-is linked (Phase 2).
+`supabase/migrations/` creates all tables, indexes, RLS policies, grants, the sign-up trigger
+and default categories. Apply with `supabase db push`, or paste both files in order into the
+Supabase SQL editor.
+
+## Android
+
+```bash
+npm run build && npx cap sync android
+cd android && ./gradlew assembleDebug   # needs Android SDK (sdk.dir in android/local.properties) and JDK 17+
+```
 
 ## Secrets
 

@@ -9,6 +9,7 @@ import { Empty } from '@/components/ui/misc'
 import { DateFilter, useDateFilter } from '@/components/DateFilter'
 import { BarSeries, Donut, RankBars, TrendArea } from '@/components/charts'
 import { TxnRow } from '@/components/TxnRow'
+import { MoveLocalData } from '@/components/MoveLocalData'
 import { useLookups, useStore } from '@/data/store'
 import { biggest, budgetStatus, byCategory, dailySeries, expenses, groupSum, income, monthlyTrend, sum, within } from '@/lib/analytics'
 import { rangeFor, monthKey } from '@/lib/dates'
@@ -51,6 +52,7 @@ export default function Dashboard() {
         right={<Button size="icon" variant="ghost" asChild aria-label="Budget alerts"><Link to="/budgets"><Bell /></Link></Button>} />
 
       <div className="space-y-4 px-4">
+        <MoveLocalData />
         <Card className="overflow-hidden border-0 bg-gradient-to-br from-teal-700 to-emerald-600 text-white">
           <CardContent className="p-5">
             <p className="text-xs text-white/75">Spent this month</p>

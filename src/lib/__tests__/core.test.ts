@@ -21,13 +21,13 @@ describe('format', () => {
 
 describe('categorize', () => {
   it('matches Indian merchants', () => {
-    expect(suggestCategory('SWIGGY*ORDER 99123', undefined, []).categoryId).toBe('cat_food')
-    expect(suggestCategory('Blinkit', undefined, []).categoryId).toBe('cat_groceries')
-    expect(suggestCategory('Netflix', undefined, []).categoryId).toBe('cat_entertainment')
+    expect(suggestCategory('SWIGGY*ORDER 99123', undefined, [], DEFAULT_CATEGORIES).categoryId).toBe('cat_food')
+    expect(suggestCategory('Blinkit', undefined, [], DEFAULT_CATEGORIES).categoryId).toBe('cat_groceries')
+    expect(suggestCategory('Netflix', undefined, [], DEFAULT_CATEGORIES).categoryId).toBe('cat_entertainment')
   })
-  it('marks unknown merchants as not confident', () => expect(suggestCategory('Ramesh Kumar', undefined, []).confident).toBe(false))
+  it('marks unknown merchants as not confident', () => expect(suggestCategory('Ramesh Kumar', undefined, [], DEFAULT_CATEGORIES).confident).toBe(false))
   it('learned rules win over keywords', () =>
-    expect(suggestCategory('Swiggy', undefined, [{ merchantKey: 'swiggy', categoryId: 'cat_groceries', hits: 1 }]).categoryId).toBe('cat_groceries'))
+    expect(suggestCategory('Swiggy', undefined, [{ merchantKey: 'swiggy', categoryId: 'cat_groceries', hits: 1 }], DEFAULT_CATEGORIES).categoryId).toBe('cat_groceries'))
 })
 
 describe('dedupe', () => {

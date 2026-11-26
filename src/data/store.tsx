@@ -4,8 +4,8 @@ import { detectRecurring } from '@/lib/analytics'
 import { fingerprint } from '@/lib/dedupe'
 import { merchantKey, uid } from '@/lib/utils'
 import type { Budget, Category, NewTransaction, PaymentSource, Preferences, Profile, RecurringPayment, Transaction } from '@/lib/types'
-import { LocalRepository, emptySnapshot } from './localRepository'
-import type { Repository, Snapshot } from './repository'
+import { emptySnapshot } from './localRepository'
+import type { Repository, Snapshot, SyncStatus } from './repository'
 
 export type AddResult = { ok: true; txn: Transaction } | { ok: false; reason: 'duplicate'; existing: Transaction }
 
@@ -24,7 +24,7 @@ function makeActions(get: () => Snapshot, set: (fn: (s: Snapshot) => Snapshot) =
   const build = (input: NewTransaction, s: Snapshot): Transaction => {
     let { categoryId, status } = input
     if (!categoryId && input.type === 'debit') {
-      const sug = suggestCategory(input.merchantName, input.description, s.rules)
+      const sug = suggestCategory(input.merchantName, input.description, s.rules, s.categories)
       categoryId = sug.categoryId
       status = sug.confident ? status : 'needs_review'
     }
@@ -126,28 +126,38 @@ function makeActions(get: () => Snapshot, set: (fn: (s: Snapshot) => Snapshot) =
     deleteRecurring: (id: string) => set((s) => ({ ...s, recurring: s.recurring.filter((r) => r.id !== id) })),
 
     resetAll: () => set(() => emptySnapshot()),
+    /** Replace everything (used when moving device data into a cloud account) */
+    replaceAll: (next: Snapshot) => set(() => next),
   }
 }
 
 type Actions = ReturnType<typeof makeActions>
-type Store = Snapshot & Actions & { ready: boolean; repoKind: Repository['kind'] }
+type Store = Snapshot & Actions & { ready: boolean; loadError: string | null; repoKind: Repository['kind']; sync: SyncStatus }
 
 const Ctx = createContext<Store | null>(null)
 
-export function StoreProvider({ children, repo = new LocalRepository() }: { children: ReactNode; repo?: Repository }) {
+export function StoreProvider({ children, repo }: { children: ReactNode; repo: Repository }) {
   const [snap, setSnap] = useState<Snapshot>(emptySnapshot)
   const [ready, setReady] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [sync, setSync] = useState<SyncStatus>({ state: 'idle', pending: false })
   const ref = useRef(snap); ref.current = snap
   const repoRef = useRef(repo)
 
-  useEffect(() => { repoRef.current.load().then((s) => { setSnap(s); setReady(true) }) }, [])
+  useEffect(() => {
+    const r = repoRef.current
+    const off = r.onStatus?.(setSync)
+    r.load().then((s) => { ref.current = s; setSnap(s); setReady(true) })
+      .catch((e) => setLoadError(e?.message ?? String(e)))
+    return () => { off?.(); r.dispose?.() }
+  }, [])
 
   const set = useCallback((fn: (s: Snapshot) => Snapshot) => {
     const next = fn(ref.current); ref.current = next; setSnap(next)
     void repoRef.current.save(next)
   }, [])
   const actions = useMemo(() => makeActions(() => ref.current, set), [set])
-  const value = useMemo(() => ({ ...snap, ...actions, ready, repoKind: repoRef.current.kind }), [snap, actions, ready])
+  const value = useMemo(() => ({ ...snap, ...actions, ready, loadError, sync, repoKind: repoRef.current.kind }), [snap, actions, ready, loadError, sync])
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

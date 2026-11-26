@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { useStore } from '@/data/store'
 import { useApplyTheme } from '@/hooks/useTheme'
+import { supabase } from '@/lib/supabase'
 import { Login, Splash } from '@/screens/Auth'
 import Dashboard from '@/screens/Dashboard'
 import Transactions from '@/screens/Transactions'
@@ -18,9 +19,21 @@ import DetectionSettings from '@/screens/DetectionSettings'
 import Profile from '@/screens/Profile'
 
 function RequireOnboarded({ children }: { children: ReactNode }) {
-  const { ready, profile } = useStore()
+  const { ready, profile, loadError } = useStore()
+  if (loadError) return <LoadError message={loadError} />
   if (!ready) return null
   return profile.onboarded ? <>{children}</> : <Navigate to="/splash" replace />
+}
+
+function LoadError({ message }: { message: string }) {
+  return (
+    <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center gap-3 px-6 text-center">
+      <p className="text-lg font-semibold">Couldn’t load your data</p>
+      <p className="text-sm text-muted-foreground">{message}</p>
+      <button className="mx-auto h-10 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground" onClick={() => location.reload()}>Try again</button>
+      <button className="mx-auto text-sm text-muted-foreground underline" onClick={() => supabase?.auth.signOut()}>Sign out</button>
+    </div>
+  )
 }
 
 function ScrollTop() {

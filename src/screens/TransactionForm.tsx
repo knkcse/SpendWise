@@ -45,7 +45,7 @@ export default function TransactionForm({ mode }: { mode: 'add' | 'edit' }) {
   const subCats = store.categories.filter((c) => c.parentId && c.parentId === categoryId)
   const amt = Number(amount)
   const splitTotal = round2(splits.reduce((a, s) => a + (Number(s.amount) || 0), 0))
-  const suggestion = useMemo(() => (!categoryId && merchant.trim().length > 2 && type === 'debit' ? suggestCategory(merchant, description, store.rules) : null), [merchant, description, categoryId, type, store.rules])
+  const suggestion = useMemo(() => (!categoryId && merchant.trim().length > 2 && type === 'debit' ? suggestCategory(merchant, description, store.rules, store.categories) : null), [merchant, description, categoryId, type, store.rules, store.categories])
 
   if (mode === 'edit' && !existing) return <Page><PageHeader title="Not found" back /><p className="px-4 text-sm text-muted-foreground">This transaction no longer exists.</p></Page>
 
