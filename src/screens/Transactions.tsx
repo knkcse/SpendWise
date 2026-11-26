@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { format } from 'date-fns'
 import { Download, EyeOff, ListFilter, Receipt, Search, Tags, Trash2, Upload, X } from 'lucide-react'
@@ -36,7 +36,13 @@ export default function Transactions() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkCat, setBulkCat] = useState(false)
   const [bulkDel, setBulkDel] = useState(false)
-  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  // The finger lifting after a long press lands as a click on the row (now a checkbox); swallow that one click.
+  const swallowClick = useRef(false)
+  const startSelectWith = (id: string) => {
+    setSelecting(true); setSelected(new Set([id])); swallowClick.current = true
+    window.addEventListener('pointerup', () => window.setTimeout(() => { swallowClick.current = false }, 400), { once: true })
+  }
+  const toggle = (id: string) => { if (swallowClick.current) { swallowClick.current = false; return } setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n }) }
   const endSelect = () => { setSelecting(false); setSelected(new Set()) }
   const f = useDateFilter('all', prefs.weekStartsOn)
 
@@ -104,7 +110,7 @@ export default function Transactions() {
         ) : groups.map((g) => (
           <div key={g.day} className="mb-3">
             {g.day && <p className="mb-1.5 px-1 text-xs font-medium text-muted-foreground">{g.day}</p>}
-            <Card className="divide-y overflow-hidden">{g.items.map((t) => <TxnRow key={t.id} t={t} selected={selected.has(t.id)} onToggle={selecting ? () => toggle(t.id) : undefined} />)}</Card>
+            <Card className="divide-y overflow-hidden">{g.items.map((t) => <TxnRow key={t.id} t={t} selected={selected.has(t.id)} onToggle={selecting ? () => toggle(t.id) : undefined} onLongPress={() => startSelectWith(t.id)} />)}</Card>
           </div>
         ))}
       </div>

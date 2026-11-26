@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { format } from 'date-fns'
 import { Download, FileSpreadsheet, FileText, Loader2, Share2 } from 'lucide-react'
-import { Sheet } from './ui/misc'
+import { Sheet, Switch } from './ui/misc'
 import { Button } from './ui/button'
 import { useToast } from './toast'
 import { useStore } from '@/data/store'
@@ -13,18 +13,22 @@ import type { Transaction } from '@/lib/types'
 type Kind = 'csv' | 'xlsx' | 'pdf'
 
 /** Export the transactions currently shown (filters applied) as CSV, Excel or a PDF statement. */
-export function ExportSheet({ open, onOpenChange, list, range, preset, filterParts }:
+export function ExportSheet({ open, onOpenChange, list: all, range, preset, filterParts }:
   { open: boolean; onOpenChange: (o: boolean) => void; list: Transaction[]; range: DateRange; preset: RangePreset; filterParts: string[] }) {
   const { categories, sources, profile } = useStore()
   const toast = useToast()
   const [busy, setBusy] = useState<Kind | null>(null)
   const [saved, setSaved] = useState<SavedFile | null>(null)
+  const [includeExcluded, setIncludeExcluded] = useState(false)
+  const excludedCount = all.filter((t) => t.excludeFromReports).length
+  const list = includeExcluded ? all : all.filter((t) => !t.excludeFromReports)
 
   // "All time" uses the span of the exported transactions instead of the year 2000.
   const dates = list.map((t) => t.occurredAt).sort()
   const period = preset === 'all' && dates.length ? { from: new Date(dates[0]), to: new Date(dates[dates.length - 1]) } : range
   const periodLabel = preset === 'all' ? 'All time' : preset === 'custom' ? `${format(range.from, 'd MMM yyyy')} – ${format(range.to, 'd MMM yyyy')}` : PRESET_LABELS[preset]
-  const filterNote = `Period: ${periodLabel}.${filterParts.length ? ` Filters: ${filterParts.join(', ')}.` : ' No other filters.'}`
+  const exclNote = excludedCount ? (includeExcluded ? ` Includes ${excludedCount} transaction(s) marked "exclude from reports" (not counted in totals).` : ` ${excludedCount} transaction(s) marked "exclude from reports" are left out.`) : ''
+  const filterNote = `Period: ${periodLabel}.${filterParts.length ? ` Filters: ${filterParts.join(', ')}.` : ' No other filters.'}${exclNote}`
 
   const run = async (kind: Kind) => {
     setBusy(kind); setSaved(null)
@@ -48,12 +52,18 @@ export function ExportSheet({ open, onOpenChange, list, range, preset, filterPar
   }
 
   return (
-    <Sheet open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setSaved(null) }} title={`Export ${list.length} transaction${list.length === 1 ? '' : 's'}`}>
+    <Sheet open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) { setSaved(null); setIncludeExcluded(false) } }} title={`Export ${list.length} transaction${list.length === 1 ? '' : 's'}`}>
       <p className="mb-4 rounded-xl bg-muted p-3 text-xs text-muted-foreground">Only the transactions shown on screen are exported. {filterNote}</p>
+      {excludedCount > 0 && (
+        <label className="mb-4 flex items-center justify-between gap-3 rounded-xl border p-3 text-sm">
+          <span>Include {excludedCount} excluded transaction{excludedCount === 1 ? '' : 's'}<span className="block text-xs text-muted-foreground">Marked “exclude from reports”. Off by default.</span></span>
+          <Switch checked={includeExcluded} onCheckedChange={setIncludeExcluded} aria-label="Include excluded transactions" />
+        </label>
+      )}
       <div className="grid gap-2">
-        <Button variant="outline" disabled={!!busy} onClick={() => run('pdf')}>{busy === 'pdf' ? <Loader2 className="animate-spin" /> : <FileText />}PDF statement</Button>
-        <Button variant="outline" disabled={!!busy} onClick={() => run('xlsx')}>{busy === 'xlsx' ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}Excel (.xlsx)</Button>
-        <Button variant="outline" disabled={!!busy} onClick={() => run('csv')}>{busy === 'csv' ? <Loader2 className="animate-spin" /> : <Download />}CSV file</Button>
+        <Button variant="outline" disabled={!!busy || !list.length} onClick={() => run('pdf')}>{busy === 'pdf' ? <Loader2 className="animate-spin" /> : <FileText />}PDF statement</Button>
+        <Button variant="outline" disabled={!!busy || !list.length} onClick={() => run('xlsx')}>{busy === 'xlsx' ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}Excel (.xlsx)</Button>
+        <Button variant="outline" disabled={!!busy || !list.length} onClick={() => run('csv')}>{busy === 'csv' ? <Loader2 className="animate-spin" /> : <Download />}CSV file</Button>
       </div>
       {saved && (
         <div className="mt-4 rounded-xl border border-primary/30 bg-accent p-3 text-sm text-accent-foreground">

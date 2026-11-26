@@ -35,7 +35,7 @@ export async function buildStatementPdf(ts: Transaction[], cats: Category[], sou
     doc.setTextColor(20); doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.text(v, x + 10, 133); doc.setFont('helvetica', 'normal')
   })
   doc.setFontSize(8.5); doc.setTextColor(110)
-  doc.text(doc.splitTextToSize(`${info.filterNote}${excluded ? ` ${excluded} transaction(s) marked "exclude from reports" are listed but not counted in the totals.` : ''}`, W - 80), 40, 162)
+  doc.text(doc.splitTextToSize(`${info.filterNote}${excluded ? ' Rows marked * are excluded from reports.' : ''}`, W - 80), 40, 162)
 
   const cats_ = [...byCategory(ts).entries()].sort((a, b) => b[1] - a[1])
   autoTable(doc, {

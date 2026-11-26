@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { format } from 'date-fns'
 import { AlertCircle, Check, EyeOff } from 'lucide-react'
@@ -8,7 +9,31 @@ import { PAYMENT_METHOD_LABELS } from '@/lib/defaults'
 import { CategoryIcon } from './CategoryIcon'
 import { cn } from '@/lib/utils'
 
-export function TxnRow({ t, selected, onToggle }: { t: Transaction; selected?: boolean; onToggle?: () => void }) {
+/** Press and hold for 500 ms without moving. Returns handlers and whether the last press was a long one. */
+function useLongPress(onLongPress?: () => void) {
+  const timer = useRef<number>()
+  const start = useRef<{ x: number; y: number } | null>(null)
+  const fired = useRef(false)
+  const clear = () => { window.clearTimeout(timer.current); start.current = null }
+  if (!onLongPress) return { handlers: {}, fired }
+  return {
+    fired,
+    handlers: {
+      onPointerDown: (e: React.PointerEvent) => {
+        fired.current = false; start.current = { x: e.clientX, y: e.clientY }
+        timer.current = window.setTimeout(() => { fired.current = true; navigator.vibrate?.(20); onLongPress() }, 500)
+      },
+      onPointerMove: (e: React.PointerEvent) => {
+        if (start.current && Math.hypot(e.clientX - start.current.x, e.clientY - start.current.y) > 10) clear()
+      },
+      onPointerUp: clear, onPointerCancel: clear, onPointerLeave: clear,
+      onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+    },
+  }
+}
+
+export function TxnRow({ t, selected, onToggle, onLongPress }: { t: Transaction; selected?: boolean; onToggle?: () => void; onLongPress?: () => void }) {
+  const lp = useLongPress(onToggle ? undefined : onLongPress)
   const { cat, src } = useLookups()
   const c = cat(t.categoryId)
   const source = src(t.paymentSourceId)?.displayName ?? PAYMENT_METHOD_LABELS[t.paymentMethod]
@@ -31,5 +56,7 @@ export function TxnRow({ t, selected, onToggle }: { t: Transaction; selected?: b
       </p>
   </>)
   if (onToggle) return <button type="button" onClick={onToggle} aria-pressed={selected} className={cn('flex w-full items-center gap-3 px-4 py-3 text-left', selected && 'bg-accent/60')}>{body}</button>
-  return <Link to={`/transactions/${t.id}`} className="flex items-center gap-3 px-4 py-3 active:bg-muted/60">{body}</Link>
+  return <Link to={`/transactions/${t.id}`} {...lp.handlers} draggable={false}
+    onClick={(e) => { if (lp.fired.current) { e.preventDefault(); lp.fired.current = false } }}
+    className="flex select-none items-center gap-3 px-4 py-3 [-webkit-touch-callout:none] active:bg-muted/60">{body}</Link>
 }
