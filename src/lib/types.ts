@@ -103,4 +103,9 @@ export interface Profile {
   fullName: string
   email: string | null
   onboarded: boolean
+  avatarUrl?: string | null
+  phone?: string | null
+  dateOfBirth?: string | null // yyyy-MM-dd
+  city?: string | null
+  occupation?: string | null
 }

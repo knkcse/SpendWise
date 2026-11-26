@@ -122,7 +122,11 @@ export class SupabaseRepository implements Repository {
     if (profile.error) throw profile.error
     if (prefs.error) throw prefs.error
     return {
-      profile: { fullName: (profile.data?.full_name as string) ?? '', email: this.email, onboarded: true },
+      profile: {
+        fullName: (profile.data?.full_name as string) ?? '', email: this.email, onboarded: true,
+        avatarUrl: profile.data?.avatar_url ?? null, phone: profile.data?.phone ?? null, dateOfBirth: profile.data?.date_of_birth ?? null,
+        city: profile.data?.city ?? null, occupation: profile.data?.occupation ?? null,
+      },
       prefs: prefs.data ? M.prefsFromRow(prefs.data) : DEFAULT_PREFS,
       categories: cats.map(M.categoryFromRow),
       sources: sources.map(M.sourceFromRow),
@@ -139,7 +143,11 @@ export class SupabaseRepository implements Repository {
     const p: Snapshot = prev ?? { ...next, transactions: [], categories: [], sources: [], budgets: [], recurring: [], rules: [], profile: { ...next.profile, fullName: '\u0000' }, prefs: { ...next.prefs, theme: '\u0000' as never } }
     const ok = <T extends { error: unknown }>(r: T) => { if (r.error) throw r.error; return r }
 
-    if (p.profile.fullName !== next.profile.fullName) ok(await db.from('profiles').upsert({ id: uid, full_name: next.profile.fullName || null }))
+    const profileRow = (x: Snapshot['profile']) => ({
+      id: uid, full_name: x.fullName || null, avatar_url: x.avatarUrl ?? null, phone: x.phone || null,
+      date_of_birth: x.dateOfBirth || null, city: x.city || null, occupation: x.occupation || null,
+    })
+    if (JSON.stringify(profileRow(p.profile)) !== JSON.stringify(profileRow(next.profile))) ok(await db.from('profiles').upsert(profileRow(next.profile)))
     if (JSON.stringify(p.prefs) !== JSON.stringify(next.prefs)) ok(await db.from('user_preferences').upsert(M.prefsToRow(next.prefs, uid)))
 
     const src = diff(p.sources, next.sources, (s) => s.id)

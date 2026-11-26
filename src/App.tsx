@@ -17,6 +17,7 @@ import Budgets from '@/screens/Budgets'
 import Recurring from '@/screens/Recurring'
 import DetectionSettings from '@/screens/DetectionSettings'
 import Profile from '@/screens/Profile'
+import EditProfile from '@/screens/EditProfile'
 
 function RequireOnboarded({ children }: { children: ReactNode }) {
   const { ready, profile, loadError } = useStore()
@@ -61,6 +62,7 @@ export default function App() {
         <Route path="/transactions/import" element={<RequireOnboarded><ImportCSV /></RequireOnboarded>} />
         <Route path="/transactions/:id" element={<RequireOnboarded><TransactionDetails /></RequireOnboarded>} />
         <Route path="/transactions/:id/edit" element={<RequireOnboarded><TransactionForm mode="edit" /></RequireOnboarded>} />
+        <Route path="/profile/edit" element={<RequireOnboarded><EditProfile /></RequireOnboarded>} />
         <Route path="/categories" element={<RequireOnboarded><Categories /></RequireOnboarded>} />
         <Route path="/reports/weekly" element={<RequireOnboarded><WeeklyReport /></RequireOnboarded>} />
         <Route path="/reports/monthly" element={<RequireOnboarded><MonthlyReport /></RequireOnboarded>} />

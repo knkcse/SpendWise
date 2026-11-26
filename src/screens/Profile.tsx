@@ -4,10 +4,10 @@ import { format } from 'date-fns'
 import { BellRing, CalendarDays, ChevronRight, Cloud, CloudOff, Download, LogOut, RefreshCw, Smartphone as Phone, FolderTree, Moon, Repeat, Smartphone, Trash2, BarChart3 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/AppShell'
 import { Card } from '@/components/ui/card'
-import { Input, Label } from '@/components/ui/input'
 import { Confirm, Segmented, Switch } from '@/components/ui/misc'
 import { useToast } from '@/components/toast'
 import { useStore } from '@/data/store'
+import { Avatar } from '@/components/Avatar'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { download, toCSV } from '@/lib/csv'
@@ -15,7 +15,6 @@ import { download, toCSV } from '@/lib/csv'
 export default function Profile() {
   const s = useStore()
   const nav = useNavigate(); const toast = useToast()
-  const [name, setName] = useState(s.profile.fullName)
   const [del, setDel] = useState(false)
 
   const exportAll = () => {
@@ -36,13 +35,14 @@ export default function Profile() {
     <div>
       <PageHeader title="Profile & settings" />
       <div className="space-y-4 px-4">
-        <Card className="flex items-center gap-3 p-4">
-          <span className="grid size-12 shrink-0 place-items-center rounded-full bg-primary text-lg font-semibold text-primary-foreground">{(s.profile.fullName || 'S')[0].toUpperCase()}</span>
+        <Link to="/profile/edit" className="flex items-center gap-3 rounded-2xl border bg-card p-4 active:bg-muted/60">
+          <Avatar url={s.profile.avatarUrl} name={s.profile.fullName} className="size-14" />
           <div className="min-w-0 flex-1">
-            <Label htmlFor="pname" className="mb-1">Name</Label>
-            <Input id="pname" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() && name !== s.profile.fullName && (s.setProfile({ fullName: name.trim() }), toast('Name updated'))} className="h-9" />
+            <p className="truncate font-semibold">{s.profile.fullName || 'Add your name'}</p>
+            <p className="truncate text-xs text-muted-foreground">{s.profile.email ?? 'Device-only mode'}</p>
           </div>
-        </Card>
+          <span className="text-xs font-medium text-primary">Edit</span>
+        </Link>
 
         <AccountCard />
 
