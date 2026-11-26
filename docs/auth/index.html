@@ -19,15 +19,42 @@
   a.btn { display:block; margin-top:20px; padding:14px; border-radius:14px; background:var(--primary); color:var(--primary-fg); font-weight:600; text-decoration:none }
   a.btn:focus-visible { outline:3px solid var(--fg); outline-offset:2px }
   small { display:block; margin-top:16px; color:var(--muted) }
+  form { text-align:left; margin-top:8px }
+  label { display:block; font-size:14px; font-weight:600; margin:14px 0 6px }
+  input[type=password], input[type=text] { width:100%; padding:12px 14px; font:inherit; color:var(--fg); background:var(--bg); border:1px solid var(--border); border-radius:12px }
+  input:focus-visible { outline:2px solid var(--primary); outline-offset:1px }
+  label.show { display:flex; gap:8px; align-items:center; font-weight:400; color:var(--muted) }
+  button { width:100%; margin-top:18px; padding:14px; border:0; border-radius:14px; background:var(--primary); color:var(--primary-fg); font:inherit; font-weight:600; cursor:pointer }
+  button:disabled { opacity:.6 }
+  .err { color:var(--err); margin:12px 0 0 }
 </style>
 </head>
 <body>
 <main id="ok">
   <div class="icon"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></div>
-  <h1>You’re verified</h1>
-  <p id="msg">Go back to the SpendWise app on your phone. If you just confirmed your email, sign in with your email and password.</p>
-  <p id="reset" hidden>Resetting your password? Tap <b>Open SpendWise</b> to choose a new one.</p>
+  <h1>Your email is confirmed</h1>
+  <p>Your SpendWise account is ready. Go back to the SpendWise app on your phone and sign in with your email and password.</p>
   <a class="btn" id="open" href="#" hidden>Open SpendWise</a>
+  <small>You can close this page.</small>
+</main>
+<main id="reset" hidden>
+  <div class="icon"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/></svg></div>
+  <h1>Set a new password</h1>
+  <p id="for">Choose a new password for your SpendWise account.</p>
+  <form id="pwform" novalidate>
+    <label for="pw">New password</label>
+    <input id="pw" type="password" autocomplete="new-password" minlength="8" placeholder="At least 8 characters" required>
+    <label for="pw2">Confirm new password</label>
+    <input id="pw2" type="password" autocomplete="new-password" required>
+    <label class="show"><input type="checkbox" id="show"> Show passwords</label>
+    <p id="err" class="err" role="alert" hidden></p>
+    <button type="submit" id="save">Save password</button>
+  </form>
+</main>
+<main id="done" hidden>
+  <div class="icon"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></div>
+  <h1>Password updated</h1>
+  <p>Go back to the SpendWise app and sign in with your email and new password.</p>
   <small>You can close this page.</small>
 </main>
 <main id="bad" hidden>
@@ -37,24 +64,55 @@
   <p>Open SpendWise and sign in. If your email isn’t confirmed yet, the app will send you a new link.</p>
 </main>
 <script>
-  // Supabase verifies the email before redirecting here, then appends ?code= (or #error=...).
+  // Public values only: the project URL and its publishable key (also shipped in the app). RLS protects all data.
+  var SUPABASE_URL = 'https://vrpflupwzjekwlhicecp.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable__QmnCGoSVR06PTwd_eZ06Q_jkEVFUZB';
+  function show(id) { ['ok', 'reset', 'done', 'bad'].forEach(function (x) { document.getElementById(x).hidden = x !== id; }); }
   (function () {
     var q = new URLSearchParams(location.search), h = new URLSearchParams(location.hash.slice(1));
     var err = q.get('error_description') || h.get('error_description');
+    history.replaceState(null, '', location.pathname); // keep codes and tokens out of history
     if (err) {
-      document.getElementById('ok').hidden = true; document.getElementById('bad').hidden = false;
+      show('bad');
       if (!/expired|invalid/i.test(err)) document.getElementById('why').textContent = err;
       return;
     }
-    // On Android, offer to hand the one-time code to the app so it can sign in directly.
-    if (/Android/i.test(navigator.userAgent)) {
-      var a = document.getElementById('open');
-      a.href = 'intent://auth-callback' + location.search + '#Intent;scheme=app.spendwise.android;package=app.spendwise.android;end';
-      a.hidden = false;
-      document.getElementById('reset').hidden = false;
-      document.getElementById('msg').textContent = 'Tap Open SpendWise to continue in the app. If you just confirmed your email, you can also go back to the app and sign in.';
+    // Password reset: Supabase verified the emailed link and put a short-lived recovery token in the hash.
+    if (h.get('type') === 'recovery' && h.get('access_token')) {
+      var token = h.get('access_token');
+      show('reset');
+      var f = document.getElementById('pwform'), e = document.getElementById('err'), b = document.getElementById('save');
+      var pw = document.getElementById('pw'), pw2 = document.getElementById('pw2');
+      document.getElementById('show').onchange = function () { pw.type = pw2.type = this.checked ? 'text' : 'password'; };
+      try { var email = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).email; if (email) document.getElementById('for').textContent = 'Choose a new password for ' + email + '.'; } catch (x) {}
+      f.onsubmit = function (ev) {
+        ev.preventDefault(); e.hidden = true;
+        var fail = function (m) { e.textContent = m; e.hidden = false; };
+        if (pw.value.length < 8) return fail('Password must be at least 8 characters.');
+        if (pw.value !== pw2.value) return fail('The two passwords don’t match.');
+        b.disabled = true; b.textContent = 'Saving…';
+        fetch(SUPABASE_URL + '/auth/v1/user', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + token },
+          body: JSON.stringify({ password: pw.value })
+        }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, j: j }; }); })
+          .then(function (res) {
+            if (res.ok) return show('done');
+            var m = res.j.msg || res.j.message || res.j.error_description || 'Something went wrong.';
+            if (/same|different/i.test(m)) m = 'Choose a password you haven’t used before.';
+            else if (/expired|invalid|jwt/i.test(m)) m = 'This reset link has expired. Ask for a new one from the SpendWise app.';
+            fail(m);
+          })
+          .catch(function () { fail('Couldn’t reach SpendWise. Check your connection and try again.'); })
+          .then(function () { b.disabled = false; b.textContent = 'Save password'; });
+      };
+      return;
     }
-    history.replaceState(null, '', location.pathname); // keep the code out of history
+    // Email confirmation (PKCE): on Android, offer to hand the one-time code to the app.
+    if (/Android/i.test(navigator.userAgent) && q.get('code')) {
+      var a = document.getElementById('open');
+      a.href = 'intent://auth-callback?code=' + encodeURIComponent(q.get('code')) + '#Intent;scheme=app.spendwise.android;package=app.spendwise.android;end';
+      a.hidden = false;
+    }
   })();
 </script>
 </body>

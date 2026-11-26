@@ -96,9 +96,9 @@ function ForgotPassword({ initialEmail, onBack }: { initialEmail: string; onBack
       {sent ? (<>
         <p className="mt-1 text-sm text-muted-foreground">If <span className="font-medium text-foreground">{email.trim()}</span> has a SpendWise account, we’ve sent a reset link to it.</p>
         <ol className="mt-4 list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
-          <li>Open the email <span className="font-medium text-foreground">on this phone</span> and tap the link.</li>
-          <li>Tap <span className="font-medium text-foreground">Open SpendWise</span> on the page that opens.</li>
-          <li>Choose a new password in the app.</li>
+          <li>Open the email on any phone or computer and tap <span className="font-medium text-foreground">Reset password</span>.</li>
+          <li>Choose a new password on the page that opens.</li>
+          <li>Come back here and sign in with it.</li>
         </ol>
         <p className="mt-4 text-xs text-muted-foreground">Can’t find it? Check spam or promotions. The link expires after an hour.</p>
         <Button variant="outline" className="mt-6 w-full" onClick={onBack}>Back to sign in</Button>
