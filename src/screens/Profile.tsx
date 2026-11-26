@@ -10,7 +10,7 @@ import { useStore } from '@/data/store'
 import { Avatar } from '@/components/Avatar'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
-import { download, toCSV } from '@/lib/csv'
+import { saveFile, shareFile } from '@/lib/saveFile'
 
 export default function Profile() {
   const s = useStore()
@@ -19,8 +19,8 @@ export default function Profile() {
 
   const exportAll = () => {
     const { profile, transactions, categories, sources, budgets, recurring, rules, prefs } = s
-    download(`spendwise-backup-${format(new Date(), 'yyyy-MM-dd')}.json`, JSON.stringify({ version: 1, profile, transactions, categories, sources, budgets, recurring, rules, prefs }, null, 2), 'application/json')
-    toast('Backup downloaded')
+    saveFile(`spendwise-backup-${format(new Date(), 'yyyy-MM-dd')}.json`, JSON.stringify({ version: 1, profile, transactions, categories, sources, budgets, recurring, rules, prefs }, null, 2), 'application/json')
+      .then((f) => { toast(f.location ? `Backup saved to ${f.location}` : 'Backup ready'); if (!f.location) void shareFile(f) }).catch((e) => toast(`Backup failed: ${e.message}`))
   }
 
   const links = [
@@ -63,7 +63,7 @@ export default function Profile() {
 
         <Card className="divide-y">
           <button onClick={exportAll} className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm"><Download className="size-4 text-muted-foreground" />Download all my data (JSON)</button>
-          <button disabled={!s.transactions.length} onClick={() => { download(`spendwise-transactions-${format(new Date(), 'yyyy-MM-dd')}.csv`, toCSV(s.transactions, s.categories, s.sources)); toast('CSV exported') }} className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm disabled:opacity-50"><Download className="size-4 text-muted-foreground" />Export transactions (CSV)</button>
+          <button disabled={!s.transactions.length} onClick={() => nav('/transactions?export=1')} className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm disabled:opacity-50"><Download className="size-4 text-muted-foreground" />Export transactions (PDF, Excel, CSV)</button>
           <button onClick={() => setDel(true)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm text-destructive"><Trash2 className="size-4" />{s.repoKind === 'supabase' ? 'Delete my account and data' : 'Delete all my data'}</button>
         </Card>
         <p className="pb-4 text-center text-xs text-muted-foreground">SpendWise 0.3.0 · Phase 3</p>

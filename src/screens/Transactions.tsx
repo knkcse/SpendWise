@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { format } from 'date-fns'
-import { Download, EyeOff, FileSpreadsheet, ListFilter, Receipt, Search, Tags, Trash2, Upload, X } from 'lucide-react'
+import { Download, EyeOff, ListFilter, Receipt, Search, Tags, Trash2, Upload, X } from 'lucide-react'
 import { PageHeader } from '@/components/layout/AppShell'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -13,8 +13,7 @@ import { Fab } from './Dashboard'
 import { PullToRefresh } from '@/components/PullToRefresh'
 import { useStore } from '@/data/store'
 import { inRange, round2 } from '@/lib/analytics'
-import { download, toCSV } from '@/lib/csv'
-import { exportExcel } from '@/lib/exportExcel'
+import { ExportSheet } from '@/components/ExportSheet'
 import { formatINR } from '@/lib/format'
 import { PAYMENT_METHOD_LABELS } from '@/lib/defaults'
 import type { PaymentMethod, Transaction } from '@/lib/types'
@@ -32,7 +31,7 @@ export default function Transactions() {
   const [sort, setSort] = useState<Sort>('latest')
   const [filters, setFilters] = useState<Filters>({ ...EMPTY, status: params.get('status') === 'needs_review' ? 'needs_review' : '' })
   const [open, setOpen] = useState(false)
-  const [exportOpen, setExportOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(params.get('export') === '1')
   const [selecting, setSelecting] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkCat, setBulkCat] = useState(false)
@@ -74,7 +73,6 @@ export default function Transactions() {
     return g
   }, [list, sort])
 
-  const stamp = format(new Date(), 'yyyy-MM-dd')
   return (
     <PullToRefresh><div>
       <PageHeader title="Transactions" subtitle={`${list.length} shown · ${formatINR(total)} spent`}
@@ -143,13 +141,17 @@ export default function Transactions() {
         </div>
       </Sheet>
 
-      <Sheet open={exportOpen} onOpenChange={setExportOpen} title={`Export ${list.length} transactions`}>
-        <p className="mb-4 text-sm text-muted-foreground">Exports the transactions currently shown, with your filters applied.</p>
-        <div className="grid gap-2">
-          <Button variant="outline" onClick={() => { download(`spendwise-${stamp}.csv`, toCSV(list, categories, sources)); setExportOpen(false); toast('CSV exported') }}><Download />CSV file</Button>
-          <Button variant="outline" onClick={async () => { await exportExcel(list, categories, sources, `spendwise-${stamp}.xlsx`); setExportOpen(false); toast('Excel file exported') }}><FileSpreadsheet />Excel (.xlsx)</Button>
-        </div>
-      </Sheet>
+      <ExportSheet open={exportOpen} onOpenChange={setExportOpen} list={list} range={f.range} preset={f.preset}
+        filterParts={[
+          q.trim() && `search "${q.trim()}"`,
+          filters.type && (filters.type === 'debit' ? 'expenses only' : 'income only'),
+          filters.status && 'needs review',
+          filters.categoryId && `category ${categories.find((c) => c.id === filters.categoryId)?.name}`,
+          filters.merchant && `merchant ${filters.merchant}`,
+          filters.sourceId && `app ${sources.find((x) => x.id === filters.sourceId)?.displayName}`,
+          filters.method && `method ${PAYMENT_METHOD_LABELS[filters.method]}`,
+          filters.min && `min Rs ${filters.min}`, filters.max && `max Rs ${filters.max}`,
+        ].filter(Boolean) as string[]} />
       {selecting ? (
         <div className="fixed inset-x-0 bottom-[4.5rem] z-40 mx-auto max-w-lg px-3">
           <div className="flex items-center gap-1 rounded-2xl border bg-card p-2 shadow-lg">
