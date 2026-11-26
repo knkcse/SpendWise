@@ -7,7 +7,10 @@ import { Button } from '@/components/ui/button'
 import { BarSeries, Donut, RankBars } from '@/components/charts'
 import { Stat } from './Dashboard'
 import { useLookups, useStore } from '@/data/store'
-import { biggest, byCategory, dailySeries, expenses, groupSum, income, pctChange, sum, within } from '@/lib/analytics'
+import { pctChange } from '@/lib/analytics'
+import { fillDays } from '@/lib/summary'
+import { useSummary } from '@/hooks/useAnalytics'
+import { Patterns, SourceNote } from '@/components/AnalyticsBits'
 import { formatINR, formatPct } from '@/lib/format'
 
 function Compare({ curr, prev, label }: { curr: number; prev: number; label: string }) {
@@ -32,19 +35,19 @@ function Stepper({ label, onPrev, onNext, nextDisabled }: { label: string; onPre
 }
 
 export function WeeklyReport() {
-  const { transactions: ts, prefs } = useStore()
+  const { prefs } = useStore()
   const { catName } = useLookups()
   const [anchor, setAnchor] = useState(new Date())
   const o = { weekStartsOn: prefs.weekStartsOn }
   const r = { from: startOfWeek(anchor, o), to: endOfWeek(anchor, o) }
   const p = { from: startOfWeek(subWeeks(anchor, 1), o), to: endOfWeek(subWeeks(anchor, 1), o) }
+  const cur = useSummary(r); const prev = useSummary(p)
   const d = useMemo(() => {
-    const w = within(ts, r); const total = sum(expenses(w))
-    const days = dailySeries(ts, r)
+    const c = cur.data
+    const days = fillDays(c, r)
     const top = days.reduce((a, x) => (x.total > a.total ? x : a), days[0])
-    const cats = [...byCategory(w).entries()].sort((a, b) => b[1] - a[1])
-    return { total, days, top, cats, count: expenses(w).length, prev: sum(expenses(within(ts, p))) }
-  }, [ts, r.from.getTime()]) // eslint-disable-line react-hooks/exhaustive-deps
+    return { total: c.spent, days, top, cats: c.byCategory, count: c.expenseCount, prev: prev.data.spent, merchants: c.topMerchants.slice(0, 5) }
+  }, [cur.data, prev.data]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Page>
@@ -58,35 +61,39 @@ export function WeeklyReport() {
         </div>
         <Card><CardHeader><CardTitle>Daily breakdown</CardTitle></CardHeader><CardContent><BarSeries data={d.days.map((x) => ({ ...x, label: x.label.split(' ')[0] }))} x="label" y="total" highlightMax /></CardContent></Card>
         <Card><CardHeader><CardTitle>Top categories</CardTitle></CardHeader><CardContent>
-          {d.cats.length ? <RankBars rows={d.cats.slice(0, 5).map(([id, v]) => ({ label: catName(id), value: v }))} /> : <p className="py-4 text-center text-sm text-muted-foreground">No expenses this week</p>}
+          {d.cats.length ? <RankBars rows={d.cats.slice(0, 5).map((c) => ({ label: catName(c.categoryId), value: c.total }))} /> : <p className="py-4 text-center text-sm text-muted-foreground">No expenses this week</p>}
         </CardContent></Card>
+        <Card><CardHeader><CardTitle>Top merchants</CardTitle></CardHeader><CardContent>
+          {d.merchants.length ? <RankBars rows={d.merchants.map((m) => ({ label: m.merchant, value: m.total, sub: `· ${m.count}×` }))} /> : <p className="py-4 text-center text-sm text-muted-foreground">No expenses this week</p>}
+        </CardContent></Card>
+        <Card><CardHeader><CardTitle>When you spend</CardTitle></CardHeader><CardContent><Patterns s={cur.data} weekStartsOn={prefs.weekStartsOn} /></CardContent></Card>
+        <SourceNote source={cur.source === 'server' && prev.source === 'server' ? 'server' : 'device'} className="pb-4" />
       </div>
     </Page>
   )
 }
 
 export function MonthlyReport() {
-  const { transactions: ts } = useStore()
+  const { prefs } = useStore()
   const { cat, catName, src } = useLookups()
   const [anchor, setAnchor] = useState(new Date())
   const r = { from: startOfMonth(anchor), to: endOfMonth(anchor) }
   const p = { from: startOfMonth(subMonths(anchor, 1)), to: endOfMonth(subMonths(anchor, 1)) }
+  const cur = useSummary(r); const prev = useSummary(p)
   const d = useMemo(() => {
-    const w = within(ts, r); const pw = within(ts, p)
-    const total = sum(expenses(w)); const inc = sum(income(w))
-    const cats = [...byCategory(w).entries()].sort((a, b) => b[1] - a[1])
-    const prevCats = byCategory(pw)
+    const c = cur.data, pv = prev.data
+    const prevCats = new Map(pv.byCategory.map((x) => [x.categoryId, x.total]))
     // Potential savings: categories that rose vs last month. This is an
     // estimate of what returning to last month's level would save, not a fact.
-    const potential = cats.map(([id, v]) => ({ id, v, prev: prevCats.get(id) ?? 0 }))
+    const potential = c.byCategory.map((x) => ({ id: x.categoryId, v: x.total, prev: prevCats.get(x.categoryId) ?? 0 }))
       .filter((x) => x.prev > 0 && x.v > x.prev).map((x) => ({ ...x, diff: x.v - x.prev })).sort((a, b) => b.diff - a.diff).slice(0, 3)
     return {
-      total, inc, net: inc - total, cats, prev: sum(expenses(pw)), big: biggest(w), potential,
-      merchants: groupSum(expenses(w), (t) => t.merchantName).slice(0, 6),
-      sources: groupSum(expenses(w), (t) => src(t.paymentSourceId)?.displayName ?? 'Other / manual'),
-      days: dailySeries(ts, r).map((x) => ({ ...x, label: x.label.split(' ')[1] })),
+      total: c.spent, inc: c.income, net: c.income - c.spent, cats: c.byCategory, prev: pv.spent, big: c.biggest, potential,
+      merchants: c.topMerchants.slice(0, 6),
+      sources: c.bySource.map((x) => ({ key: src(x.sourceId)?.displayName ?? 'Other / manual', total: x.total, count: x.count })),
+      days: fillDays(c, r).map((x) => ({ ...x, label: x.label.split(' ')[1] })),
     }
-  }, [ts, r.from.getTime()]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cur.data, prev.data]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Page>
@@ -98,13 +105,13 @@ export function MonthlyReport() {
           <Stat label="Income recorded" value={formatINR(d.inc)} />
           <Stat label="Net savings" value={formatINR(d.net)} hint="Recorded income − expenses" />
         </div>
-        <Stat label="Highest transaction" value={d.big ? formatINR(d.big.amount) : '—'} hint={d.big ? `${d.big.merchantName} · ${format(new Date(d.big.occurredAt), 'd MMM')}` : 'No expenses'} />
+        <Stat label="Highest transaction" value={d.big ? formatINR(d.big.amount) : '—'} hint={d.big ? `${d.big.merchant} · ${format(new Date(d.big.occurredAt), 'd MMM')}` : 'No expenses'} />
         <Card><CardHeader><CardTitle>Daily spending</CardTitle></CardHeader><CardContent><BarSeries data={d.days} x="label" y="total" height={160} /></CardContent></Card>
         <Card><CardHeader><CardTitle>By category</CardTitle></CardHeader><CardContent>
-          {d.cats.length ? <Donut data={d.cats.map(([id, v]) => ({ name: catName(id), value: v, color: cat(id)?.color ?? '#94a3b8' }))} total={d.total} /> : <p className="py-4 text-center text-sm text-muted-foreground">No expenses</p>}
+          {d.cats.length ? <Donut data={d.cats.map((c) => ({ name: catName(c.categoryId), value: c.total, color: cat(c.categoryId)?.color ?? '#94a3b8' }))} total={d.total} /> : <p className="py-4 text-center text-sm text-muted-foreground">No expenses</p>}
         </CardContent></Card>
         <Card><CardHeader><CardTitle>Top merchants</CardTitle></CardHeader><CardContent>
-          {d.merchants.length ? <RankBars rows={d.merchants.map((m) => ({ label: m.key, value: m.total, sub: `· ${m.count}×` }))} /> : <p className="py-4 text-center text-sm text-muted-foreground">No expenses</p>}
+          {d.merchants.length ? <RankBars rows={d.merchants.map((m) => ({ label: m.merchant, value: m.total, sub: `· ${m.count}×` }))} /> : <p className="py-4 text-center text-sm text-muted-foreground">No expenses</p>}
         </CardContent></Card>
         <Card><CardHeader><CardTitle>By payment source</CardTitle></CardHeader><CardContent>
           {d.sources.length ? <RankBars rows={d.sources.map((m) => ({ label: m.key, value: m.total, sub: `· ${m.count}×` }))} /> : <p className="py-4 text-center text-sm text-muted-foreground">No expenses</p>}
@@ -117,6 +124,8 @@ export function MonthlyReport() {
             </ul>
           ) : <p className="text-sm text-muted-foreground">No category rose compared with last month, so there’s no estimate to show.</p>}
         </CardContent></Card>
+        <Card><CardHeader><CardTitle>When you spend</CardTitle></CardHeader><CardContent><Patterns s={cur.data} weekStartsOn={prefs.weekStartsOn} /></CardContent></Card>
+        <SourceNote source={cur.source === 'server' && prev.source === 'server' ? 'server' : 'device'} className="pb-4" />
       </div>
     </Page>
   )

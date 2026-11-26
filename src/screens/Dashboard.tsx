@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom'
 import { PullToRefresh } from '@/components/PullToRefresh'
 import { useMemo } from 'react'
-import { AlertCircle, ArrowDownRight, ArrowUpRight, Bell, Plus, Receipt, Wallet } from 'lucide-react'
-import { endOfDay } from 'date-fns'
+import { AlertCircle, ArrowDownRight, ArrowUpRight, Bell, CalendarDays, CalendarRange, Plus, Receipt, Wallet } from 'lucide-react'
+import { endOfDay, format } from 'date-fns'
 import { PageHeader } from '@/components/layout/AppShell'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,10 @@ import { BarSeries, Donut, RankBars, TrendArea } from '@/components/charts'
 import { TxnRow } from '@/components/TxnRow'
 import { MoveLocalData } from '@/components/MoveLocalData'
 import { useLookups, useStore } from '@/data/store'
-import { biggest, budgetStatus, byCategory, dailySeries, expenses, groupSum, income, monthlyTrend, sum, within } from '@/lib/analytics'
+import { budgetStatus, round2 } from '@/lib/analytics'
+import { fillDays } from '@/lib/summary'
+import { useOverview, useSummary } from '@/hooks/useAnalytics'
+import { Change, Patterns, SourceNote } from '@/components/AnalyticsBits'
 import { rangeFor, monthKey } from '@/lib/dates'
 import { formatINR } from '@/lib/format'
 import { PRESET_LABELS } from '@/lib/dates'
@@ -23,27 +26,25 @@ export default function Dashboard() {
   const f = useDateFilter('month', prefs.weekStartsOn)
   const now = new Date()
 
+  const weekRange = rangeFor('week', now, prefs.weekStartsOn)
+  const ov = useOverview(6)
+  const ps = useSummary(f.range)
+  const wk = useSummary({ from: weekRange.from, to: endOfDay(weekRange.to) })
+
   const s = useMemo(() => {
-    const today = sum(expenses(within(ts, rangeFor('today', now))))
-    const week = sum(expenses(within(ts, rangeFor('week', now, prefs.weekStartsOn))))
-    const monthTx = within(ts, rangeFor('month', now))
-    const month = sum(expenses(monthTx)); const monthIncome = sum(income(monthTx))
+    const o = ov.data, p = ps.data
     const overall = budgets.find((b) => b.categoryId === null && b.month === monthKey(now))
-    const bs = overall ? budgetStatus(overall, ts, now) : null
-    const period = within(ts, f.range)
-    const cats = [...byCategory(period).entries()].sort((a, b) => b[1] - a[1])
-    const periodTotal = sum(expenses(period))
-    const apps = groupSum(expenses(period), (t) => src(t.paymentSourceId)?.displayName ?? 'Other / manual')
-    const weekRange = rangeFor('week', now, prefs.weekStartsOn)
     return {
-      today, week, month, monthIncome, savings: monthIncome - month, bs, periodTotal,
-      big: biggest(period), count: period.filter((t) => !t.excludeFromReports).length,
-      weekly: dailySeries(ts, { from: weekRange.from, to: endOfDay(weekRange.to) }).map((d) => ({ ...d, label: d.label.split(' ')[0] })),
-      trend: monthlyTrend(ts, 6, now),
-      cats: cats.map(([id, v]) => ({ name: catName(id), value: v, color: cat(id)?.color ?? '#94a3b8' })),
-      apps, review: ts.filter((t) => t.status === 'needs_review').length,
+      ...o, savings: round2(o.monthIncome - o.month), bs: overall ? budgetStatus(overall, ts, now) : null,
+      periodTotal: p.spent, big: p.biggest, count: p.count,
+      weekly: fillDays(wk.data, { from: weekRange.from, to: weekRange.to }).map((d) => ({ ...d, label: d.label.split(' ')[0] })),
+      trendChart: o.trend.map((m) => ({ month: format(new Date(m.month + '-01T00:00:00'), 'MMM'), expenses: m.spent, income: m.income })),
+      cats: p.byCategory.map((c) => ({ name: catName(c.categoryId), value: c.total, color: cat(c.categoryId)?.color ?? '#94a3b8' })),
+      apps: p.bySource.map((x) => ({ key: src(x.sourceId)?.displayName ?? 'Other / manual', total: x.total, count: x.count })),
+      merchants: p.topMerchants.slice(0, 5),
+      review: ts.filter((t) => t.status === 'needs_review').length,
     }
-  }, [ts, f.range.from.getTime(), f.range.to.getTime(), budgets, prefs.weekStartsOn]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ov.data, ps.data, wk.data, ts, budgets]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const hello = now.getHours() < 12 ? 'Good morning' : now.getHours() < 17 ? 'Good afternoon' : 'Good evening'
 
@@ -58,6 +59,7 @@ export default function Dashboard() {
           <CardContent className="p-5">
             <p className="text-xs text-white/75">Spent this month</p>
             <p className="mt-1 text-3xl font-semibold tracking-tight">{formatINR(s.month)}</p>
+            <Change curr={s.month} prev={s.prevMonthToDate} label="this point last month" className="mt-1" onDark />
             <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
               <div><p className="text-white/70">Today</p><p className="mt-0.5 text-sm font-semibold">{formatINR(s.today)}</p></div>
               <div><p className="text-white/70">This week</p><p className="mt-0.5 text-sm font-semibold">{formatINR(s.week)}</p></div>
@@ -85,6 +87,8 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 gap-3">
           <Stat label="Monthly savings" value={formatINR(s.savings)} hint="Recorded income − expenses" icon={s.savings >= 0 ? <ArrowUpRight className="text-success" /> : <ArrowDownRight className="text-destructive" />} />
           <Stat label="Remaining budget" value={s.bs ? formatINR(s.bs.remaining) : '—'} hint={s.bs ? `of ${formatINR(s.bs.budget.amount)}` : 'No budget set'} icon={<Wallet className="text-primary" />} />
+          <Stat label="Spent this year" value={formatINR(s.year)} hint={s.prevYearToDate ? `${formatPctShort(s.year, s.prevYearToDate)} vs last year to date` : 'Nothing last year to compare'} icon={<CalendarRange className="text-primary" />} />
+          <Stat label="This week so far" value={formatINR(s.week)} hint={s.prevWeekToDate ? `${formatPctShort(s.week, s.prevWeekToDate)} vs last week to date` : 'Nothing last week to compare'} icon={<CalendarDays className="text-primary" />} />
         </div>
       </div>
 
@@ -93,7 +97,7 @@ export default function Dashboard() {
       <div className="mt-3 space-y-4 px-4">
         <div className="grid grid-cols-2 gap-3">
           <Stat label={`Spent · ${PRESET_LABELS[f.preset]}`} value={formatINR(s.periodTotal)} hint={`${s.count} transactions`} icon={<Receipt className="text-primary" />} />
-          <Stat label="Biggest expense" value={s.big ? formatINR(s.big.amount) : '—'} hint={s.big?.merchantName ?? 'Nothing yet'} />
+          <Stat label="Biggest expense" value={s.big ? formatINR(s.big.amount) : '—'} hint={s.big?.merchant ?? 'Nothing yet'} />
         </div>
 
         <Card><CardHeader><CardTitle>Spending by category</CardTitle></CardHeader>
@@ -102,11 +106,17 @@ export default function Dashboard() {
         <Card><CardHeader><CardTitle>By payment app</CardTitle></CardHeader>
           <CardContent>{s.apps.length ? <RankBars rows={s.apps.slice(0, 6).map((a) => ({ label: a.key, value: a.total, sub: `· ${a.count}` }))} /> : <p className="py-6 text-center text-sm text-muted-foreground">No expenses in this period</p>}</CardContent></Card>
 
+        <Card><CardHeader><CardTitle>Top merchants</CardTitle></CardHeader>
+          <CardContent>{s.merchants.length ? <RankBars rows={s.merchants.map((m) => ({ label: m.merchant, value: m.total, sub: `· ${m.count}×` }))} /> : <p className="py-6 text-center text-sm text-muted-foreground">No expenses in this period</p>}</CardContent></Card>
+
+        <Card><CardHeader><CardTitle>When you spend</CardTitle></CardHeader>
+          <CardContent><Patterns s={ps.data} weekStartsOn={prefs.weekStartsOn} /></CardContent></Card>
+
         <Card><CardHeader><CardTitle>This week</CardTitle><Link to="/reports/weekly" className="text-xs font-medium text-primary">Weekly report</Link></CardHeader>
           <CardContent><BarSeries data={s.weekly} x="label" y="total" /></CardContent></Card>
 
         <Card><CardHeader><CardTitle>6-month trend</CardTitle><Link to="/reports/monthly" className="text-xs font-medium text-primary">Monthly report</Link></CardHeader>
-          <CardContent><TrendArea data={s.trend} /></CardContent></Card>
+          <CardContent><TrendArea data={s.trendChart} /></CardContent></Card>
 
         <Card>
           <CardHeader><CardTitle>Recent transactions</CardTitle><Link to="/transactions" className="text-xs font-medium text-primary">See all</Link></CardHeader>
@@ -118,9 +128,15 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      <SourceNote source={ov.source === 'server' && ps.source === 'server' ? 'server' : 'device'} className="mt-4 px-4" />
       <Fab />
     </div></PullToRefresh>
   )
+}
+
+function formatPctShort(curr: number, prev: number) {
+  const ch = ((curr - prev) / prev) * 100
+  return `${ch > 0 ? '↑' : ch < 0 ? '↓' : ''}${Math.abs(ch).toFixed(0)}%`
 }
 
 export function Stat({ label, value, hint, icon }: { label: string; value: string; hint?: string; icon?: React.ReactNode }) {
