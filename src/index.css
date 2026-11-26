@@ -3,6 +3,8 @@
 @tailwind utilities;
 
 @layer base {
+  /* Charts: no browser focus ring or tap flash when a bar or slice is tapped. */
+  .recharts-wrapper, .recharts-wrapper *:focus, .recharts-surface:focus { outline: none; -webkit-tap-highlight-color: transparent; }
   :root {
     color-scheme: light;
     --background: 210 20% 98%; --foreground: 222 47% 11%;

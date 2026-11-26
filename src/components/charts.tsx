@@ -1,14 +1,17 @@
 import { Area, AreaChart, Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from 'recharts'
+import { useState } from 'react'
 import { formatINR, formatINRCompact } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 const axis = { fontSize: 11, fill: 'hsl(var(--muted-foreground))' }
 const tip = {
-  contentStyle: { background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 12, fontSize: 12, color: 'hsl(var(--foreground))' },
+  contentStyle: { background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 10, fontSize: 12, color: 'hsl(var(--foreground))', padding: '6px 10px', boxShadow: '0 4px 14px rgb(0 0 0 / 0.12)' },
+  allowEscapeViewBox: { x: false, y: false },
   // Explicit colours: bars coloured per cell have no series colour, so recharts fell back to black text.
   labelStyle: { color: 'hsl(var(--foreground))', fontWeight: 600 },
   itemStyle: { color: 'hsl(var(--foreground))' },
   formatter: (v: number) => formatINR(v),
-  cursor: { fill: 'hsl(var(--muted))' },
+  cursor: { fill: 'hsl(var(--muted-foreground) / 0.08)' },
 }
 
 export function BarSeries({ data, x, y, height = 180, highlightMax }: { data: object[]; x: string; y: string; height?: number; highlightMax?: boolean }) {
@@ -50,28 +53,40 @@ export function TrendArea({ data, height = 180 }: { data: Array<{ month: string;
 
 export interface Slice { name: string; value: number; color: string }
 
+/** Tap a slice (or a legend row) to show its amount in the centre; tap again to go back to the total. */
 export function Donut({ data, total }: { data: Slice[]; total: number }) {
+  const [active, setActive] = useState<number | null>(null)
+  const sel = active !== null ? data[active] : undefined
+  const toggle = (i: number) => setActive((a) => (a === i ? null : i))
   return (
     <div className="flex items-center gap-4">
       <div className="relative size-36 shrink-0">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Pie animationDuration={500} data={data} dataKey="value" nameKey="name" innerRadius="68%" outerRadius="100%" paddingAngle={data.length > 1 ? 2 : 0} stroke="none">
-              {data.map((d) => <Cell key={d.name} fill={d.color} />)}
+            <Pie animationDuration={500} data={data} dataKey="value" nameKey="name" innerRadius="68%" outerRadius="100%" paddingAngle={data.length > 1 ? 2 : 0} stroke="none"
+              className="cursor-pointer">
+              {data.map((d, i) => <Cell key={d.name} fill={d.color} opacity={sel && active !== i ? 0.35 : 1} onClick={() => toggle(i)} />)}
             </Pie>
-            <Tooltip {...tip} />
           </PieChart>
         </ResponsiveContainer>
-        <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
-          <div><p className="text-[10px] text-muted-foreground">Total</p><p className="text-sm font-semibold">{formatINRCompact(total)}</p></div>
+        <div className="pointer-events-none absolute inset-0 grid place-items-center px-6 text-center">
+          {sel ? (
+            <div className="min-w-0"><p className="truncate text-[10px] text-muted-foreground">{sel.name}</p><p className="text-sm font-semibold">{formatINRCompact(sel.value)}</p>
+              <p className="text-[10px] text-muted-foreground">{total ? Math.round((sel.value / total) * 100) : 0}%</p></div>
+          ) : (
+            <div><p className="text-[10px] text-muted-foreground">Total</p><p className="text-sm font-semibold">{formatINRCompact(total)}</p></div>
+          )}
         </div>
       </div>
-      <ul className="min-w-0 flex-1 space-y-1.5">
-        {data.slice(0, 6).map((d) => (
-          <li key={d.name} className="flex items-center gap-2 text-xs">
-            <span className="size-2.5 shrink-0 rounded-full" style={{ background: d.color }} />
-            <span className="min-w-0 flex-1 truncate">{d.name}</span>
-            <span className="font-medium">{total ? Math.round((d.value / total) * 100) : 0}%</span>
+      <ul className="min-w-0 flex-1 space-y-0.5">
+        {data.slice(0, 6).map((d, i) => (
+          <li key={d.name}>
+            <button type="button" onClick={() => toggle(i)} aria-pressed={active === i}
+              className={cn('flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left text-xs', active === i && 'bg-muted', sel && active !== i && 'opacity-60')}>
+              <span className="size-2.5 shrink-0 rounded-full" style={{ background: d.color }} />
+              <span className="min-w-0 flex-1 truncate">{d.name}</span>
+              <span className="font-medium">{active === i ? formatINR(d.value) : `${total ? Math.round((d.value / total) * 100) : 0}%`}</span>
+            </button>
           </li>
         ))}
       </ul>
