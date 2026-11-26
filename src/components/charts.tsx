@@ -4,6 +4,9 @@ import { formatINR, formatINRCompact } from '@/lib/format'
 const axis = { fontSize: 11, fill: 'hsl(var(--muted-foreground))' }
 const tip = {
   contentStyle: { background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 12, fontSize: 12, color: 'hsl(var(--foreground))' },
+  // Explicit colours: bars coloured per cell have no series colour, so recharts fell back to black text.
+  labelStyle: { color: 'hsl(var(--foreground))', fontWeight: 600 },
+  itemStyle: { color: 'hsl(var(--foreground))' },
   formatter: (v: number) => formatINR(v),
   cursor: { fill: 'hsl(var(--muted))' },
 }
