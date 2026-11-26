@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { Info, Loader2, Wallet } from 'lucide-react'
+import { Info, Loader2, MailCheck, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/misc'
@@ -25,6 +25,51 @@ export function Splash() {
   )
 }
 
+/** Sign-up confirmation by code typed in the app: no links, so it works on any device. */
+function VerifyCode({ email, onBack }: { email: string; onBack: () => void }) {
+  const [code, setCode] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<{ tone: 'error' | 'info'; text: string } | null>(null)
+  const [cooldown, setCooldown] = useState(60)
+  useEffect(() => { if (cooldown <= 0) return; const t = setTimeout(() => setCooldown(cooldown - 1), 1000); return () => clearTimeout(t) }, [cooldown])
+
+  const verify = async (e: React.FormEvent) => {
+    e.preventDefault(); if (!supabase) return
+    if (!/^\d{6,10}$/.test(code)) return setMsg({ tone: 'error', text: 'Enter the code from the email.' })
+    setBusy(true); setMsg(null)
+    const { error } = await supabase.auth.verifyOtp({ email, token: code, type: 'signup' })
+    setBusy(false)
+    if (error) setMsg({ tone: 'error', text: /expired|invalid/i.test(error.message) ? 'That code is wrong or has expired. Check the latest email, or send a new code.' : error.message })
+    // On success the auth listener receives the session and the app opens the dashboard.
+  }
+  const resend = async () => {
+    if (!supabase) return
+    const { error } = await supabase.auth.resend({ type: 'signup', email })
+    if (error) return setMsg({ tone: 'error', text: error.message })
+    setCooldown(60); setMsg({ tone: 'info', text: 'New code sent.' })
+  }
+
+  return (
+    <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center px-6 py-10">
+      <span className="grid size-14 place-items-center rounded-2xl bg-primary text-primary-foreground"><MailCheck className="size-7" /></span>
+      <h1 className="mt-6 text-2xl font-semibold tracking-tight">Check your email</h1>
+      <p className="mt-1 text-sm text-muted-foreground">We sent a code to <span className="font-medium text-foreground">{email}</span>. Enter it below to finish creating your account.</p>
+      <form className="mt-6 space-y-3" onSubmit={verify} noValidate>
+        <div><Label htmlFor="otp">Confirmation code</Label>
+          <Input id="otp" autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={10} value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} className="text-center text-2xl font-semibold tracking-[0.4em]" placeholder="••••••" /></div>
+        {msg && <p role={msg.tone === 'error' ? 'alert' : 'status'} className={`rounded-xl p-3 text-sm ${msg.tone === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-accent text-accent-foreground'}`}>{msg.text}</p>}
+        <Button type="submit" className="w-full" disabled={busy || code.length < 6}>{busy && <Loader2 className="animate-spin" />}Confirm and sign in</Button>
+      </form>
+      <div className="mt-4 flex justify-between text-sm">
+        <button className="text-muted-foreground" onClick={onBack}>Use a different email</button>
+        <button className="font-medium text-primary disabled:text-muted-foreground" disabled={cooldown > 0} onClick={resend}>{cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}</button>
+      </div>
+      <p className="mt-6 text-xs text-muted-foreground">Can’t find it? Check spam or promotions. The code expires after an hour.</p>
+    </div>
+  )
+}
+
 export function Login() {
   const { setProfile, profile } = useStore()
   const { session, oauthError, clearOAuthError } = useAuth()
@@ -35,8 +80,10 @@ export function Login() {
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ tone: 'error' | 'info'; text: string } | null>(null)
+  const [verifyEmail, setVerifyEmail] = useState<string | null>(null)
 
   if (session) return <Navigate to="/" replace />
+  if (verifyEmail) return <VerifyCode email={verifyEmail} onBack={() => setVerifyEmail(null)} />
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); if (!supabase) return
@@ -53,10 +100,14 @@ export function Login() {
         const { data, error } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { full_name: fullName.trim() || null }, emailRedirectTo: authRedirectUrl() } })
         if (error) throw error
         if (data.session) nav('/', { replace: true })
-        else { setMode('signin'); setPassword(''); setMsg({ tone: 'info', text: `We sent a confirmation link to ${email.trim()}. Open it on this phone and SpendWise will sign you in.` }) }
+        else setVerifyEmail(email.trim())
       }
     } catch (err) {
       const m = (err as Error).message
+      if (/not confirmed/i.test(m)) {
+        await supabase.auth.resend({ type: 'signup', email: email.trim() }).catch(() => {})
+        return setVerifyEmail(email.trim())
+      }
       setMsg({ tone: 'error', text: /invalid login/i.test(m) ? 'Email or password is incorrect.' : /not confirmed/i.test(m) ? 'Confirm your email first using the link we sent you.' : m })
     } finally { setBusy(false) }
   }
