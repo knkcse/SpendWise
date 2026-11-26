@@ -6,8 +6,8 @@ import { Input, Label } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/misc'
 import { useStore } from '@/data/store'
 import { useAuth } from '@/data/auth'
-import { backendConfigured, supabase } from '@/lib/supabase'
-import { authRedirectUrl, signInWithGoogle } from '@/lib/oauth'
+import { EMAIL_CONFIRM_PAGE, backendConfigured, supabase } from '@/lib/supabase'
+import { signInWithGoogle } from '@/lib/oauth'
 
 export function Splash() {
   const { ready, profile } = useStore()
@@ -26,7 +26,8 @@ export function Splash() {
 }
 
 /** Sign-up confirmation by code typed in the app: no links, so it works on any device. */
-function VerifyCode({ email, onBack }: { email: string; onBack: () => void }) {
+function VerifyCode({ email, onBack, onSignIn }: { email: string; onBack: () => void; onSignIn: () => void }) {
+  const [showCode, setShowCode] = useState(false)
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ tone: 'error' | 'info'; text: string } | null>(null)
@@ -44,28 +45,31 @@ function VerifyCode({ email, onBack }: { email: string; onBack: () => void }) {
   }
   const resend = async () => {
     if (!supabase) return
-    const { error } = await supabase.auth.resend({ type: 'signup', email })
+    const { error } = await supabase.auth.resend({ type: 'signup', email, options: { emailRedirectTo: EMAIL_CONFIRM_PAGE } })
     if (error) return setMsg({ tone: 'error', text: error.message })
-    setCooldown(60); setMsg({ tone: 'info', text: 'New code sent.' })
+    setCooldown(60); setMsg({ tone: 'info', text: 'Sent again. Check your inbox.' })
   }
 
   return (
     <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center px-6 py-10">
       <span className="grid size-14 place-items-center rounded-2xl bg-primary text-primary-foreground"><MailCheck className="size-7" /></span>
       <h1 className="mt-6 text-2xl font-semibold tracking-tight">Check your email</h1>
-      <p className="mt-1 text-sm text-muted-foreground">We sent a code to <span className="font-medium text-foreground">{email}</span>. Enter it below to finish creating your account.</p>
-      <form className="mt-6 space-y-3" onSubmit={verify} noValidate>
+      <p className="mt-1 text-sm text-muted-foreground">We sent a confirmation email to <span className="font-medium text-foreground">{email}</span>. Tap the link in it, then come back here and sign in.</p>
+      <Button className="mt-6 w-full" onClick={onSignIn}>I’ve confirmed, sign in</Button>
+      {msg && !showCode && <p role={msg.tone === 'error' ? 'alert' : 'status'} className={`mt-3 rounded-xl p-3 text-sm ${msg.tone === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-accent text-accent-foreground'}`}>{msg.text}</p>}
+      {!showCode && <button className="mt-4 text-sm text-muted-foreground underline" onClick={() => setShowCode(true)}>Got a code instead of a link?</button>}
+      {showCode && <form className="mt-6 space-y-3" onSubmit={verify} noValidate>
         <div><Label htmlFor="otp">Confirmation code</Label>
           <Input id="otp" autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={10} value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} className="text-center text-2xl font-semibold tracking-[0.4em]" placeholder="••••••" /></div>
         {msg && <p role={msg.tone === 'error' ? 'alert' : 'status'} className={`rounded-xl p-3 text-sm ${msg.tone === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-accent text-accent-foreground'}`}>{msg.text}</p>}
-        <Button type="submit" className="w-full" disabled={busy || code.length < 6}>{busy && <Loader2 className="animate-spin" />}Confirm and sign in</Button>
-      </form>
+        <Button type="submit" variant="outline" className="w-full" disabled={busy || code.length < 6}>{busy && <Loader2 className="animate-spin" />}Confirm with code</Button>
+      </form>}
       <div className="mt-4 flex justify-between text-sm">
         <button className="text-muted-foreground" onClick={onBack}>Use a different email</button>
-        <button className="font-medium text-primary disabled:text-muted-foreground" disabled={cooldown > 0} onClick={resend}>{cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}</button>
+        <button className="font-medium text-primary disabled:text-muted-foreground" disabled={cooldown > 0} onClick={resend}>{cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend email'}</button>
       </div>
-      <p className="mt-6 text-xs text-muted-foreground">Can’t find it? Check spam or promotions. The code expires after an hour.</p>
+      <p className="mt-6 text-xs text-muted-foreground">Can’t find it? Check spam or promotions. The link expires after an hour.</p>
     </div>
   )
 }
@@ -83,7 +87,7 @@ export function Login() {
   const [verifyEmail, setVerifyEmail] = useState<string | null>(null)
 
   if (session) return <Navigate to="/" replace />
-  if (verifyEmail) return <VerifyCode email={verifyEmail} onBack={() => setVerifyEmail(null)} />
+  if (verifyEmail) return <VerifyCode email={verifyEmail} onBack={() => setVerifyEmail(null)} onSignIn={() => { setVerifyEmail(null); setMode('signin'); setMsg(null) }} />
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); if (!supabase) return
@@ -97,7 +101,7 @@ export function Login() {
         if (error) throw error
         nav('/', { replace: true })
       } else {
-        const { data, error } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { full_name: fullName.trim() || null }, emailRedirectTo: authRedirectUrl() } })
+        const { data, error } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { full_name: fullName.trim() || null }, emailRedirectTo: EMAIL_CONFIRM_PAGE } })
         if (error) throw error
         if (data.session) nav('/', { replace: true })
         else setVerifyEmail(email.trim())
@@ -105,7 +109,7 @@ export function Login() {
     } catch (err) {
       const m = (err as Error).message
       if (/not confirmed/i.test(m)) {
-        await supabase.auth.resend({ type: 'signup', email: email.trim() }).catch(() => {})
+        await supabase.auth.resend({ type: 'signup', email: email.trim(), options: { emailRedirectTo: EMAIL_CONFIRM_PAGE } }).catch(() => {})
         return setVerifyEmail(email.trim())
       }
       setMsg({ tone: 'error', text: /invalid login/i.test(m) ? 'Email or password is incorrect.' : /not confirmed/i.test(m) ? 'Confirm your email first using the link we sent you.' : m })

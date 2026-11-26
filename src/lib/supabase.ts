@@ -12,3 +12,6 @@ export const backendConfigured = supabase !== null
 
 /** Deep link the Android app registers for OAuth (see AndroidManifest.xml). Must be in Supabase's redirect allow-list. */
 export const NATIVE_REDIRECT = 'app.spendwise.android://auth-callback'
+
+/** Hosted "email confirmed" page (GitHub Pages, docs/auth). Must be in Supabase's redirect allow-list. */
+export const EMAIL_CONFIRM_PAGE = 'https://knkcse.github.io/SpendWise/auth/'
