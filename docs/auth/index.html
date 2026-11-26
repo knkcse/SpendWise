@@ -24,8 +24,9 @@
 <body>
 <main id="ok">
   <div class="icon"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></div>
-  <h1>Your email is confirmed</h1>
-  <p>Your SpendWise account is ready. Go back to the SpendWise app on your phone and sign in with your email and password.</p>
+  <h1>You’re verified</h1>
+  <p id="msg">Go back to the SpendWise app on your phone. If you just confirmed your email, sign in with your email and password.</p>
+  <p id="reset" hidden>Resetting your password? Tap <b>Open SpendWise</b> to choose a new one.</p>
   <a class="btn" id="open" href="#" hidden>Open SpendWise</a>
   <small>You can close this page.</small>
 </main>
@@ -50,6 +51,8 @@
       var a = document.getElementById('open');
       a.href = 'intent://auth-callback' + location.search + '#Intent;scheme=app.spendwise.android;package=app.spendwise.android;end';
       a.hidden = false;
+      document.getElementById('reset').hidden = false;
+      document.getElementById('msg').textContent = 'Tap Open SpendWise to continue in the app. If you just confirmed your email, you can also go back to the app and sign in.';
     }
     history.replaceState(null, '', location.pathname); // keep the code out of history
   })();

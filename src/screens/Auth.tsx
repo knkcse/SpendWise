@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { Eye, EyeOff, Info, Loader2, MailCheck, Wallet } from 'lucide-react'
+import { Eye, EyeOff, Info, KeyRound, Loader2, MailCheck, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/misc'
 import { useStore } from '@/data/store'
 import { useAuth } from '@/data/auth'
 import { EMAIL_CONFIRM_PAGE, backendConfigured, supabase } from '@/lib/supabase'
-import { signInWithGoogle } from '@/lib/oauth'
+import { requestPasswordReset, signInWithGoogle } from '@/lib/oauth'
 
 export function Splash() {
   const { ready, profile } = useStore()
@@ -74,6 +74,49 @@ function VerifyCode({ email, onBack, onSignIn }: { email: string; onBack: () => 
   )
 }
 
+/** Asks Supabase to email a reset link. Supabase answers the same whether or not the email has an account. */
+function ForgotPassword({ initialEmail, onBack }: { initialEmail: string; onBack: () => void }) {
+  const [email, setEmail] = useState(initialEmail)
+  const [busy, setBusy] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const send = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) return setMsg('Enter a valid email address.')
+    setBusy(true); setMsg(null)
+    try { await requestPasswordReset(email.trim()); setSent(true) } catch (err) {
+      const m = (err as Error).message
+      setMsg(/rate|seconds|too many/i.test(m) ? 'Please wait a minute before asking for another email.' : m)
+    } finally { setBusy(false) }
+  }
+  return (
+    <div className="mx-auto flex min-h-full max-w-sm flex-col justify-center px-6 py-10">
+      <span className="grid size-14 place-items-center rounded-2xl bg-primary text-primary-foreground"><KeyRound className="size-7" /></span>
+      <h1 className="mt-6 text-2xl font-semibold tracking-tight">{sent ? 'Check your email' : 'Reset your password'}</h1>
+      {sent ? (<>
+        <p className="mt-1 text-sm text-muted-foreground">If <span className="font-medium text-foreground">{email.trim()}</span> has a SpendWise account, we’ve sent a reset link to it.</p>
+        <ol className="mt-4 list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+          <li>Open the email <span className="font-medium text-foreground">on this phone</span> and tap the link.</li>
+          <li>Tap <span className="font-medium text-foreground">Open SpendWise</span> on the page that opens.</li>
+          <li>Choose a new password in the app.</li>
+        </ol>
+        <p className="mt-4 text-xs text-muted-foreground">Can’t find it? Check spam or promotions. The link expires after an hour.</p>
+        <Button variant="outline" className="mt-6 w-full" onClick={onBack}>Back to sign in</Button>
+      </>) : (
+        <form className="mt-4 space-y-3" onSubmit={send} noValidate>
+          <p className="text-sm text-muted-foreground">Enter your account email and we’ll send you a link to set a new password. This also works if you signed up with Google and want to add a password.</p>
+          <div><Label htmlFor="femail">Email</Label><Input id="femail" type="email" inputMode="email" autoComplete="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} /></div>
+          {msg && <p role="alert" className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{msg}</p>}
+          <Button type="submit" className="w-full" disabled={busy}>{busy && <Loader2 className="animate-spin" />}Send reset link</Button>
+          <button type="button" className="w-full text-sm text-muted-foreground" onClick={onBack}>Back to sign in</button>
+        </form>
+      )}
+    </div>
+  )
+}
+
+const ALREADY_REGISTERED = 'This email already has a SpendWise account. Sign in with your password, use Continue with Google if you signed up that way, or tap Forgot password.'
+
 export function Login() {
   const { setProfile, profile } = useStore()
   const { session, oauthError, clearOAuthError } = useAuth()
@@ -86,9 +129,12 @@ export function Login() {
   const [showPw, setShowPw] = useState(false)
   const [msg, setMsg] = useState<{ tone: 'error' | 'info'; text: string } | null>(null)
   const [verifyEmail, setVerifyEmail] = useState<string | null>(null)
+  const [forgot, setForgot] = useState(false)
 
   if (session) return <Navigate to="/" replace />
   if (verifyEmail) return <VerifyCode email={verifyEmail} onBack={() => setVerifyEmail(null)} onSignIn={() => { setVerifyEmail(null); setMode('signin'); setMsg(null) }} />
+
+  if (forgot) return <ForgotPassword initialEmail={email} onBack={() => { setForgot(false); setMode('signin'); setMsg(null) }} />
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); if (!supabase) return
@@ -104,6 +150,11 @@ export function Login() {
       } else {
         const { data, error } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { full_name: fullName.trim() || null }, emailRedirectTo: EMAIL_CONFIRM_PAGE } })
         if (error) throw error
+        // Supabase doesn't reveal existing accounts as an error: it returns a user with no identities.
+        if (data.user && !data.user.identities?.length) {
+          setMode('signin'); setPassword('')
+          return setMsg({ tone: 'error', text: ALREADY_REGISTERED })
+        }
         if (data.session) nav('/', { replace: true })
         else setVerifyEmail(email.trim())
       }
@@ -113,7 +164,8 @@ export function Login() {
         await supabase.auth.resend({ type: 'signup', email: email.trim(), options: { emailRedirectTo: EMAIL_CONFIRM_PAGE } }).catch(() => {})
         return setVerifyEmail(email.trim())
       }
-      setMsg({ tone: 'error', text: /invalid login/i.test(m) ? 'Email or password is incorrect.' : /not confirmed/i.test(m) ? 'Confirm your email first using the link we sent you.' : m })
+      if (/already registered|already exists/i.test(m)) { setMode('signin'); setPassword(''); return setMsg({ tone: 'error', text: ALREADY_REGISTERED }) }
+      setMsg({ tone: 'error', text: /invalid login/i.test(m) ? 'Email or password is incorrect. If you signed up with Google, use Continue with Google, or tap Forgot password to set one.' : m })
     } finally { setBusy(false) }
   }
 
@@ -144,6 +196,7 @@ export function Login() {
           </div></div>
         {msg && <p role={msg.tone === 'error' ? 'alert' : 'status'} className={`rounded-xl p-3 text-sm ${msg.tone === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-accent text-accent-foreground'}`}>{msg.text}</p>}
         <Button type="submit" className="w-full" disabled={!backendConfigured || busy}>{busy ? <Loader2 className="animate-spin" /> : null}{mode === 'signin' ? 'Sign in' : 'Create account'}</Button>
+        {mode === 'signin' && backendConfigured && <button type="button" className="w-full text-sm font-medium text-primary" onClick={() => { setMsg(null); setForgot(true) }}>Forgot password?</button>}
       </form>
       {!backendConfigured && (
         <p className="mt-3 flex gap-2 rounded-xl bg-muted p-3 text-xs text-muted-foreground"><Info className="size-4 shrink-0" />Sign-in isn’t available in this web preview. Install the Android app to use your account.</p>
