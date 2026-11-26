@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { Info, Loader2, MailCheck, Wallet } from 'lucide-react'
+import { Eye, EyeOff, Info, Loader2, MailCheck, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input, Label } from '@/components/ui/input'
 import { Segmented } from '@/components/ui/misc'
@@ -83,6 +83,7 @@ export function Login() {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
+  const [showPw, setShowPw] = useState(false)
   const [msg, setMsg] = useState<{ tone: 'error' | 'info'; text: string } | null>(null)
   const [verifyEmail, setVerifyEmail] = useState<string | null>(null)
 
@@ -133,7 +134,14 @@ export function Login() {
       <form className="mt-4 space-y-3" onSubmit={submit} noValidate>
         {mode === 'register' && <div><Label htmlFor="rname">Full name</Label><Input id="rname" disabled={!backendConfigured} autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} maxLength={60} /></div>}
         <div><Label htmlFor="email">Email</Label><Input id="email" type="email" inputMode="email" autoComplete="email" disabled={!backendConfigured} value={email} onChange={(e) => setEmail(e.target.value)} /></div>
-        <div><Label htmlFor="pw">Password</Label><Input id="pw" type="password" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} disabled={!backendConfigured} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={mode === 'register' ? 'At least 8 characters' : undefined} /></div>
+        <div><Label htmlFor="pw">Password</Label>
+          <div className="relative">
+            <Input id="pw" type={showPw ? 'text' : 'password'} className="pr-12" autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} disabled={!backendConfigured} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={mode === 'register' ? 'At least 8 characters' : undefined} />
+            <button type="button" onClick={() => setShowPw(!showPw)} aria-label={showPw ? 'Hide password' : 'Show password'} aria-pressed={showPw}
+              className="absolute right-1 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-lg text-muted-foreground hover:text-foreground">
+              {showPw ? <EyeOff className="size-[18px]" /> : <Eye className="size-[18px]" />}
+            </button>
+          </div></div>
         {msg && <p role={msg.tone === 'error' ? 'alert' : 'status'} className={`rounded-xl p-3 text-sm ${msg.tone === 'error' ? 'bg-destructive/10 text-destructive' : 'bg-accent text-accent-foreground'}`}>{msg.text}</p>}
         <Button type="submit" className="w-full" disabled={!backendConfigured || busy}>{busy ? <Loader2 className="animate-spin" /> : null}{mode === 'signin' ? 'Sign in' : 'Create account'}</Button>
       </form>
