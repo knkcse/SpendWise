@@ -5,6 +5,11 @@ import { NATIVE_REDIRECT, supabase } from './supabase'
 
 const native = Capacitor.isNativePlatform()
 
+/** Where Supabase sends the user back after Google sign-in or an email confirmation link. */
+export function authRedirectUrl(): string {
+  return native ? NATIVE_REDIRECT : window.location.origin + window.location.pathname
+}
+
 /**
  * Google sign-in through Supabase (PKCE). On Android the Google page opens in a
  * Custom Tab; Google returns to Supabase, which redirects to our deep link with
@@ -12,7 +17,7 @@ const native = Capacitor.isNativePlatform()
  */
 export async function signInWithGoogle(): Promise<void> {
   if (!supabase) throw new Error('Sign-in is not configured in this build.')
-  const redirectTo = native ? NATIVE_REDIRECT : window.location.origin + window.location.pathname
+  const redirectTo = authRedirectUrl()
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: { redirectTo, skipBrowserRedirect: true, queryParams: { prompt: 'select_account' } },
@@ -25,12 +30,14 @@ export async function signInWithGoogle(): Promise<void> {
 async function finish(url: string) {
   if (!supabase) return
   const u = new URL(url)
-  const err = u.searchParams.get('error_description')
-  if (err) throw new Error(err)
+  const err = u.searchParams.get('error_description') ?? new URLSearchParams(u.hash.slice(1)).get('error_description')
+  if (err) throw new Error(/expired|invalid/i.test(err) ? 'This link has expired or was already used. Sign in, or create the account again to get a new link.' : err)
   const code = u.searchParams.get('code')
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
-    if (error) throw error
+    // The link was already checked by Supabase, so the email is confirmed even if
+    // this device can't finish the sign-in (e.g. sign-up was started elsewhere).
+    if (error) throw new Error('Your email is confirmed. Please sign in with your email and password.')
   }
 }
 

@@ -7,7 +7,7 @@ import { Segmented } from '@/components/ui/misc'
 import { useStore } from '@/data/store'
 import { useAuth } from '@/data/auth'
 import { backendConfigured, supabase } from '@/lib/supabase'
-import { signInWithGoogle } from '@/lib/oauth'
+import { authRedirectUrl, signInWithGoogle } from '@/lib/oauth'
 
 export function Splash() {
   const { ready, profile } = useStore()
@@ -50,10 +50,10 @@ export function Login() {
         if (error) throw error
         nav('/', { replace: true })
       } else {
-        const { data, error } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { full_name: fullName.trim() || null } } })
+        const { data, error } = await supabase.auth.signUp({ email: email.trim(), password, options: { data: { full_name: fullName.trim() || null }, emailRedirectTo: authRedirectUrl() } })
         if (error) throw error
         if (data.session) nav('/', { replace: true })
-        else { setMode('signin'); setPassword(''); setMsg({ tone: 'info', text: `We sent a confirmation link to ${email.trim()}. Open it, then sign in here.` }) }
+        else { setMode('signin'); setPassword(''); setMsg({ tone: 'info', text: `We sent a confirmation link to ${email.trim()}. Open it on this phone and SpendWise will sign you in.` }) }
       }
     } catch (err) {
       const m = (err as Error).message
@@ -71,7 +71,7 @@ export function Login() {
         setMsg(null); clearOAuthError(); setBusy(true)
         try { await signInWithGoogle() } catch (e) { setMsg({ tone: 'error', text: (e as Error).message }) } finally { setBusy(false) }
       }}><GoogleIcon />Continue with Google</Button>
-      {oauthError && <p role="alert" className="mt-2 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">Google sign-in failed: {oauthError}</p>}
+      {oauthError && <p role="alert" className="mt-2 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{oauthError}</p>}
       <div className="my-4 flex items-center gap-3 text-xs text-muted-foreground"><span className="h-px flex-1 bg-border" />or use email<span className="h-px flex-1 bg-border" /></div>
 
       <Segmented value={mode} onChange={(m) => { setMode(m); setMsg(null) }} options={[{ value: 'signin', label: 'Sign in' }, { value: 'register', label: 'Create account' }]} />
