@@ -22,6 +22,11 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = '17' }
+    flavorDimensions "detection"
+    productFlavors {
+        full { dimension "detection" }   // automatic detection (notification listener)
+        lite { dimension "detection" }   // no listener: add payments by sharing an SMS to SpendWise
+    }
     buildTypes {
         release {
             minifyEnabled false

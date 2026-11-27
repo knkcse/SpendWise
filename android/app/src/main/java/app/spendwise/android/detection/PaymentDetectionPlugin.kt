@@ -20,6 +20,12 @@ class PaymentDetectionPlugin : Plugin() {
         fun notifyNew(item: JSONObject) {
             instance?.notifyListeners("detected", JSObject().put("count", 1), true)
         }
+        @Volatile private var sharedText: String? = null
+        /** Text shared to SpendWise; the app picks it up with takeShared(). */
+        fun shared(text: String) {
+            sharedText = text
+            instance?.notifyListeners("shared", JSObject(), true)
+        }
     }
 
     override fun load() { instance = this }
@@ -30,7 +36,18 @@ class PaymentDetectionPlugin : Plugin() {
         val store = DetectionStore(context)
         val granted = NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
         call.resolve(JSObject().put("accessGranted", granted).put("enabled", store.enabled)
-            .put("pending", store.pending()).put("lastHeardAt", store.lastHeardAt))
+            .put("pending", store.pending()).put("lastHeardAt", store.lastHeardAt).put("listenerInBuild", listenerInBuild()))
+    }
+
+    /** False in the "lite" build, which has no notification listener. */
+    private fun listenerInBuild(): Boolean = try {
+        context.packageManager.getServiceInfo(ComponentName(context, PaymentListenerService::class.java), 0); true
+    } catch (_: Exception) { false }
+
+    @PluginMethod
+    fun takeShared(call: PluginCall) {
+        val t = sharedText; sharedText = null
+        call.resolve(JSObject().put("text", t))
     }
 
     @PluginMethod

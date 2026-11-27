@@ -32,7 +32,7 @@ export function toTransaction(p: Extract<Parsed, { kind: 'payment' }>, n: RawNot
   return {
     type: p.type, amount: p.amount, merchantName: p.merchant, merchantRaw: p.merchant, occurredAt: p.occurredAt,
     paymentMethod: p.method, paymentSourceId: sourceFor(sources, n.pkg), categoryId: null, subcategoryId: null,
-    description: `Detected from ${n.pkg.includes('messag') || n.pkg.includes('mms') ? 'SMS' : 'notification'}${from ? ` · ${from}` : ''}`,
+    description: `${n.pkg === 'share' ? 'Added from shared SMS' : `Detected from ${n.pkg.includes('messag') || n.pkg.includes('mms') ? 'SMS' : 'notification'}`}${from ? ` · ${from}` : ''}`,
     transactionReference: p.reference, sourceNotificationId: `n:${n.id}`,
     origin: 'android_notification', status: p.exact ? 'confirmed' : 'needs_review', scope: 'personal', excludeFromReports: false, splits: [],
   }

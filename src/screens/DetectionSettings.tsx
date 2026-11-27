@@ -12,7 +12,7 @@ import { useStore } from '@/data/store'
 import { platform } from '@/lib/platform'
 import { formatINR } from '@/lib/format'
 import { parseNotification, type Parsed } from '@/lib/detect/parse'
-import { clearLog, readLog, type LogEntry } from '@/lib/detect/ingest'
+import { appendLog, clearLog, plan, readLog, type LogEntry } from '@/lib/detect/ingest'
 import { detectionAvailable, PaymentDetection, type DetectionStatus } from '@/lib/detect/plugin'
 
 const ICON: Record<LogEntry['kind'], JSX.Element> = {
@@ -39,6 +39,7 @@ export default function DetectionSettings() {
 
   const detectable = sources.filter((s) => s.code !== 'cash' && s.code !== 'card')
   const granted = !!st?.accessGranted
+  const lite = st?.listenerInBuild === false
   const on = prefs.detectionEnabled && granted
 
   return (
@@ -50,17 +51,18 @@ export default function DetectionSettings() {
             <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground"><Smartphone className="size-5" /></span>
             <div className="flex-1 text-sm">
               <div className="flex items-center gap-2"><p className="font-medium">Status</p>
-                {!available ? <Badge tone="warning">Not available here</Badge> : on ? <Badge tone="success">On</Badge> : granted ? <Badge>Off</Badge> : <Badge tone="warning">Needs access</Badge>}</div>
+                {!available ? <Badge tone="warning">Not available here</Badge> : lite ? <Badge>Share to add</Badge> : on ? <Badge tone="success">On</Badge> : granted ? <Badge>Off</Badge> : <Badge tone="warning">Needs access</Badge>}</div>
               <p className="mt-1 text-muted-foreground">
                 {platform === 'ios' ? 'iOS doesn’t let apps read notifications. On iPhone, add expenses manually or import a CSV.'
                   : !available ? 'Detection works only in the SpendWise Android app.'
+                  : lite ? 'This version doesn’t read notifications, so it installs on phones whose work policy blocks that. To add a payment: in your Messages app, long-press the bank SMS › Share › SpendWise. It’s read and added straight away.'
                   : on ? 'New bank messages are added to Transactions as they arrive. If the app is closed, they’re added the next time you open it.'
                   : granted ? 'Notification access is allowed. Turn on “Automatic detection” below.'
                   : 'Step 1: allow SpendWise to read notifications. Android shows a warning; that is normal for this permission.'}
               </p>
             </div>
           </div>
-          {available && !granted && (<>
+          {available && !lite && !granted && (<>
             <Button className="mt-4 w-full" onClick={() => void PaymentDetection.openAccessSettings()}><BellRing />Allow notification access</Button>
             <p className="mt-3 text-xs text-muted-foreground">If the SpendWise switch is greyed out or says “Restricted setting”, tap below, then the ⋮ menu (top right) › <b>Allow restricted settings</b>, and come back.</p>
             <Button variant="outline" className="mt-2 w-full" onClick={() => void PaymentDetection.openAppSettings()}>Open SpendWise app info</Button>
@@ -68,7 +70,7 @@ export default function DetectionSettings() {
           {available && st && st.pending > 0 && <p className="mt-3 text-xs text-muted-foreground">{st.pending} message{st.pending === 1 ? '' : 's'} waiting to be read.</p>}
         </Card>
 
-        <Card className="divide-y">
+        {!lite && <Card className="divide-y">
           <div className="flex items-center justify-between gap-3 p-4">
             <div><p className="text-sm font-medium">Automatic detection</p><p className="text-xs text-muted-foreground">Master switch. Turn off anytime.</p></div>
             <Switch checked={prefs.detectionEnabled} onCheckedChange={(c) => { setPrefs({ detectionEnabled: c }); setTimeout(refresh, 300) }} disabled={!available && !prefs.detectionEnabled} aria-label="Automatic detection" />
@@ -80,7 +82,7 @@ export default function DetectionSettings() {
               <Switch checked={s.detectionEnabled} onCheckedChange={(c) => setSource(s.id, { detectionEnabled: c })} aria-label={`Detect ${LABEL[s.code] ?? s.displayName}`} />
             </div>
           ))}
-        </Card>
+        </Card>}
 
         <Card>
           <div className="flex items-center justify-between px-4 pt-4"><p className="text-sm font-medium">Recent activity</p>
@@ -119,6 +121,7 @@ export default function DetectionSettings() {
 
 /** Paste any bank message to see what SpendWise would do with it. Nothing is saved. */
 function TryMessage() {
+  const store = useStore(); const toast = useToast()
   const [text, setText] = useState('')
   const [res, setRes] = useState<Parsed | null>(null)
   const describe = (p: Parsed) => p.kind === 'payment'
@@ -128,10 +131,15 @@ function TryMessage() {
   return (
     <Card className="space-y-3 p-4">
       <p className="flex items-center gap-2 text-sm font-medium"><MessageSquareText className="size-4 text-muted-foreground" />Check a message</p>
-      <p className="text-xs text-muted-foreground">Copy a bank SMS from your Messages app and paste it here to see how SpendWise reads it. Nothing is saved.</p>
+      <p className="text-xs text-muted-foreground">Copy a bank SMS from your Messages app and paste it here to see how SpendWise reads it. Nothing is saved unless you tap “Add”.</p>
       <Textarea rows={4} value={text} onChange={(e) => { setText(e.target.value); setRes(null) }} placeholder="Sent Rs.338.00 From HDFC Bank A/C …" aria-label="Bank message" />
       <Button variant="secondary" className="w-full" disabled={!text.trim()} onClick={() => setRes(parseNotification({ id: 'try', pkg: 'com.google.android.apps.messaging', title: '', text, postedAt: Date.now() }))}>Check</Button>
       {res && <p className={`rounded-lg p-3 text-sm ${res.kind === 'payment' ? 'bg-success/10' : res.kind === 'unknown' ? 'bg-destructive/10' : 'bg-muted'}`}>{describe(res)}</p>}
+      {res?.kind === 'payment' && <Button className="w-full" onClick={() => {
+        const { add, log } = plan([{ id: `paste-${Date.now()}`, pkg: 'share', title: 'Pasted message', text, postedAt: Date.now() }], store.transactions, store.sources)
+        if (add.length) store.importTransactions(add)
+        appendLog(log); toast(add.length ? `Added ${log[0].title}` : `${log[0].title}: ${log[0].detail.toLowerCase()}`); setText(''); setRes(null)
+      }}>Add to transactions</Button>}
     </Card>
   )
 }
