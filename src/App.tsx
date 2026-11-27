@@ -5,6 +5,7 @@ import { useStore } from '@/data/store'
 import { useApplyTheme } from '@/hooks/useTheme'
 import { useAutoRefresh } from '@/hooks/useAutoRefresh'
 import { useNotificationsAgent } from '@/hooks/useNotificationsAgent'
+import { useDetectionAgent } from '@/hooks/useDetectionAgent'
 import { supabase } from '@/lib/supabase'
 import { Login, Splash } from '@/screens/Auth'
 import Dashboard from '@/screens/Dashboard'
@@ -42,6 +43,7 @@ function LoadError({ message }: { message: string }) {
 
 function NotificationsAgent() {
   useNotificationsAgent()
+  useDetectionAgent()
   return null
 }
 
