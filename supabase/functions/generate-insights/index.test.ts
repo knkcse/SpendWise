@@ -152,3 +152,26 @@ Deno.test('Gemini: retired model is skipped, newest listed Flash model is used',
   assertEquals(tried, ['gemini-old', 'gemini-3.8-flash'])
   assertEquals(cfg.model, 'gemini-3.8-flash')
 })
+
+Deno.test('a busy model is retried once, then the next model is used', async () => {
+  const tried: string[] = []; const waits: number[] = []
+  const ok = () => Promise.resolve(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"summary":"ok"}' }] } }] })))
+  const demand = () => Promise.resolve(new Response(JSON.stringify({ error: { code: 503, status: 'UNAVAILABLE', message: 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.' } }), { status: 503 }))
+  const f = ((url: string) => {
+    if (url.includes('/models?')) return Promise.resolve(new Response('{}', { status: 403 }))
+    const model = url.split('/models/')[1].split(':')[0]; tried.push(model)
+    return model === 'gemini-3.8-flash' ? demand() : ok()
+  }) as never
+  const cfg = m.providerConfig((k) => ({ GEMINI_API_KEY: 'busy-key' } as Record<string, string>)[k])
+  assertEquals(await m.callModel(cfg, 's', 'u', f, (ms) => { waits.push(ms); return Promise.resolve() }), '{"summary":"ok"}')
+  assertEquals(tried, ['gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-3.7-flash'])
+  assertEquals(waits, [1500])
+  assertEquals(cfg.model, 'gemini-3.7-flash')
+
+  // Every model busy: a friendly 503, not Google's raw text.
+  const allBusy = ((url: string) => url.includes('/models?') ? Promise.resolve(new Response('{}', { status: 403 })) : demand()) as never
+  const cfg2 = m.providerConfig((k) => ({ GEMINI_API_KEY: 'busy-key-2' } as Record<string, string>)[k])
+  const err = await m.callModel(cfg2, 's', 'u', allBusy, () => Promise.resolve()).catch((e) => e)
+  assertEquals(err.status, 503)
+  assertEquals(err.message, 'The AI service is busy right now. Try again in a minute.')
+})

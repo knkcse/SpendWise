@@ -244,11 +244,11 @@ export function providerConfig(env: (k: string) => string | undefined): Provider
 // then a built-in list. A model that is refused or missing is skipped and the next one is tried.
 const GEMINI = 'https://generativelanguage.googleapis.com/v1beta'
 export const GEMINI_FALLBACK = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest', 'gemini-3.5-flash-lite']
-let geminiListCache: { at: number; models: string[] } | null = null
+let geminiListCache: { key: string; at: number; models: string[] } | null = null
 
 /** Stable text Flash models the key can use, newest first (no preview, image, audio or live variants). */
 export async function listGeminiModels(key: string, f: Fetch = fetch): Promise<string[]> {
-  if (geminiListCache && Date.now() - geminiListCache.at < 3600_000) return geminiListCache.models
+  if (geminiListCache?.key === key && Date.now() - geminiListCache.at < 3600_000) return geminiListCache.models
   try {
     const res = await f(`${GEMINI}/models?pageSize=200`, { headers: { 'x-goog-api-key': key }, signal: AbortSignal.timeout(8000) })
     if (!res.ok) return []
@@ -259,33 +259,48 @@ export async function listGeminiModels(key: string, f: Fetch = fetch): Promise<s
       .map((m) => m.name.replace(/^models\//, ''))
       .filter((n) => /^gemini-\d+(\.\d+)?-flash(-lite)?$/.test(n))
       .sort((a, z) => Number(a.includes('lite')) - Number(z.includes('lite')) || ver(z) - ver(a))
-    geminiListCache = { at: Date.now(), models }
+    geminiListCache = { key, at: Date.now(), models }
     return models
   } catch { return [] }
 }
 
 const retired = (status: number, msg: string) => status === 404 || ((status === 400 || status === 403) && /no longer available|not found|not supported|deprecated|retired|unsupported model|is not available/i.test(msg))
 
-export async function callModel(cfg: ProviderConfig, system: string, user: string, f: Fetch = fetch): Promise<string> {
-  if (cfg.provider === 'gemini') {
-    const listed = await listGeminiModels(cfg.key, f)
-    const order = [...new Set([...(cfg.pinned ? [cfg.model] : []), ...listed, ...GEMINI_FALLBACK])]
-    let last = ''
-    for (const model of order.slice(0, 6)) {
+// Busy: Google's "high demand" / UNAVAILABLE (503), rate or quota limits (429), and other 5xx or timeouts.
+// These are temporary, so the same model is retried once after a short pause, then the next model is tried.
+const busy = (status: number, msg: string) => status === 429 || status >= 500 || /high demand|overloaded|unavailable|resource.?exhausted|try again later/i.test(msg)
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+export async function callModel(cfg: ProviderConfig, system: string, user: string, f: Fetch = fetch, wait: (ms: number) => Promise<unknown> = pause): Promise<string> {
+  const order = cfg.provider === 'gemini'
+    ? [...new Set([...(cfg.pinned ? [cfg.model] : []), ...(await listGeminiModels(cfg.key, f)), ...GEMINI_FALLBACK])].slice(0, 6)
+    : [cfg.model]
+  let retiredMsg = '', busyMsg = ''
+  for (const model of order) {
+    for (let attempt = 0; attempt < 2; attempt++) {
       try { const text = await callOne({ ...cfg, model }, system, user, f); cfg.model = model; return text } catch (e) {
-        if (e instanceof RetiredModel) { last = e.message; continue }
+        if (e instanceof RetiredModel) { retiredMsg = e.message; break }
+        if (e instanceof BusyModel) { busyMsg = e.message; if (attempt === 0) await wait(1500); continue }
         throw e
       }
     }
-    throw new HttpError(502, `No Gemini model was available for this key. Set the AI_MODEL secret to a model listed in Google AI Studio. (${last})`)
   }
-  return callOne(cfg, system, user, f)
+  if (busyMsg) throw new HttpError(503, 'The AI service is busy right now. Try again in a minute.')
+  throw new HttpError(502, `No Gemini model was available for this key. Set the AI_MODEL secret to a model listed in Google AI Studio. (${retiredMsg})`)
 }
 
 class RetiredModel extends Error {}
+class BusyModel extends Error {}
 
 async function callOne(cfg: ProviderConfig, system: string, user: string, f: Fetch): Promise<string> {
-  const signal = AbortSignal.timeout(30000)
+  try { return await requestOne(cfg, system, user, f) } catch (e) {
+    if (e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError')) throw new BusyModel(`${cfg.model}: timed out`)
+    throw e
+  }
+}
+
+async function requestOne(cfg: ProviderConfig, system: string, user: string, f: Fetch): Promise<string> {
+  const signal = AbortSignal.timeout(25000)
   let res: Response
   if (cfg.provider === 'gemini') {
     res = await f(`${GEMINI}/models/${encodeURIComponent(cfg.model)}:generateContent`, {
@@ -307,7 +322,8 @@ async function callOne(cfg: ProviderConfig, system: string, user: string, f: Fet
   if (!res.ok) {
     const msg = (body as { error?: { message?: string } }).error?.message ?? `HTTP ${res.status}`
     if (cfg.provider === 'gemini' && retired(res.status, msg)) throw new RetiredModel(`${cfg.model}: ${msg}`)
-    throw new HttpError(res.status === 429 ? 429 : 502, res.status === 429 ? 'The AI service is busy or its free limit is used up. Try again in a minute.' : `The AI service returned an error: ${msg}`)
+    if (busy(res.status, msg)) throw new BusyModel(`${cfg.model}: ${msg}`)
+    throw new HttpError(502, `The AI service returned an error: ${msg}`)
   }
   const b = body as Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
   const text = cfg.provider === 'gemini' ? b.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('')
