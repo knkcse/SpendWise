@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { format } from 'date-fns'
+import { differenceInCalendarDays, format } from 'date-fns'
 import { Check, Pencil, Plus, Repeat, ScanSearch, X } from 'lucide-react'
 import { Page, PageHeader } from '@/components/layout/AppShell'
 import { Card } from '@/components/ui/card'
@@ -11,6 +11,13 @@ import { useLookups, useStore } from '@/data/store'
 import { formatINR } from '@/lib/format'
 import type { RecurringFreq, RecurringPayment } from '@/lib/types'
 import { merchantKey } from '@/lib/utils'
+
+function Due({ r }: { r: RecurringPayment }) {
+  const days = differenceInCalendarDays(new Date(r.nextExpectedAt!), new Date())
+  if (r.state === 'confirmed' && days < 0) return <p className="text-[11px] font-medium text-destructive">Due {format(new Date(r.nextExpectedAt!), 'd MMM')} · not seen yet</p>
+  if (r.state === 'confirmed' && days <= 1) return <p className="text-[11px] font-medium text-warning">Due {days === 0 ? 'today' : 'tomorrow'}</p>
+  return <p className="text-[11px] text-muted-foreground">Next {format(new Date(r.nextExpectedAt!), 'd MMM')}</p>
+}
 
 const FREQ: Record<RecurringFreq, string> = { weekly: 'Weekly', monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly' }
 
@@ -39,7 +46,7 @@ export default function Recurring() {
         <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{r.merchantName}</p>
           <p className="text-xs text-muted-foreground">{FREQ[r.frequency]} · {catName(r.categoryId)}{r.occurrences ? ` · seen ${r.occurrences}×` : ''}</p></div>
         <div className="text-right"><p className="text-sm font-semibold">{formatINR(r.expectedAmount)}</p>
-          {r.nextExpectedAt && <p className="text-[11px] text-muted-foreground">Next {format(new Date(r.nextExpectedAt), 'd MMM')}</p>}</div>
+          {r.nextExpectedAt && <Due r={r} />}</div>
       </div>
       <div className="mt-2 flex justify-end gap-1">
         {r.state === 'suggested' ? (<>
@@ -59,8 +66,8 @@ export default function Recurring() {
       <PageHeader title="Recurring payments" subtitle={confirmed.length ? `About ${formatINR(Math.round(monthly))} a month across ${confirmed.length}` : undefined} back
         right={<Button size="icon" variant="ghost" aria-label="Add" onClick={() => setEdit({ frequency: 'monthly' })}><Plus /></Button>} />
       <div className="space-y-4 px-4">
-        <Button variant="outline" className="w-full" onClick={() => { refreshRecurring(); toast('Scanned your transactions') }}><ScanSearch />Scan transactions for patterns</Button>
-        <p className="text-xs text-muted-foreground">A payment is suggested only after 3+ payments to the same merchant with similar amounts at regular intervals. Nothing counts as a subscription until you confirm it.</p>
+        <Button variant="outline" className="w-full" onClick={() => { const n = refreshRecurring(); toast(n ? `Found ${n} new suggestion${n === 1 ? '' : 's'}` : 'No new recurring payments found') }}><ScanSearch />Scan transactions for patterns</Button>
+        <p className="text-xs text-muted-foreground">A payment is suggested only after 3+ payments to the same merchant with similar amounts at regular intervals. Nothing counts as a subscription until you confirm it. The app also checks by itself about twice a day, and reminds you before confirmed payments are due (Profile › Payment reminders).</p>
 
         {suggested.length > 0 && (<>
           <p className="px-1 text-xs font-medium text-muted-foreground">Suggested <Badge tone="primary" className="ml-1">{suggested.length}</Badge></p>

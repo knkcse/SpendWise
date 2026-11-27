@@ -4,6 +4,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import { useStore } from '@/data/store'
 import { useApplyTheme } from '@/hooks/useTheme'
 import { useAutoRefresh } from '@/hooks/useAutoRefresh'
+import { useNotificationsAgent } from '@/hooks/useNotificationsAgent'
 import { supabase } from '@/lib/supabase'
 import { Login, Splash } from '@/screens/Auth'
 import Dashboard from '@/screens/Dashboard'
@@ -39,6 +40,11 @@ function LoadError({ message }: { message: string }) {
   )
 }
 
+function NotificationsAgent() {
+  useNotificationsAgent()
+  return null
+}
+
 function ScrollTop() {
   const { pathname } = useLocation()
   useEffect(() => { window.scrollTo(0, 0) }, [pathname])
@@ -51,6 +57,7 @@ export default function App() {
   return (
     <>
       <ScrollTop />
+      <NotificationsAgent />
       <Routes>
         <Route path="/splash" element={<Splash />} />
         <Route path="/login" element={<Login />} />

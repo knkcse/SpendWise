@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { suggestCategory } from '@/lib/categorize'
 import { detectRecurring } from '@/lib/analytics'
+import { rollForward } from '@/lib/alerts'
 import { fingerprint } from '@/lib/dedupe'
 import { merchantKey, uid } from '@/lib/utils'
 import type { Budget, Category, NewTransaction, PaymentSource, Preferences, Profile, RecurringPayment, Transaction } from '@/lib/types'
@@ -130,17 +131,23 @@ export function makeActions(get: () => Snapshot, set: (fn: (s: Snapshot) => Snap
     },
     deleteBudget: (id: string) => set((s) => ({ ...s, budgets: s.budgets.filter((b) => b.id !== id) })),
 
-    /** Re-run detection; keeps the user's confirm / reject decisions */
-    refreshRecurring() {
-      set((s) => {
-        const found = detectRecurring(s.transactions)
-        const merged: RecurringPayment[] = s.recurring.map((r) => {
-          const f = found.find((x) => x.merchantKey === r.merchantKey && x.frequency === r.frequency)
-          return f && r.state !== 'confirmed' ? { ...r, ...f, merchantName: r.merchantName, expectedAmount: r.expectedAmount } : r
-        })
-        for (const f of found) if (!merged.some((r) => r.merchantKey === f.merchantKey && r.frequency === f.frequency)) merged.push({ ...f, id: uid(), state: 'suggested' })
-        return { ...s, recurring: merged }
+    /**
+     * Re-run detection (keeps the user's confirm / reject decisions) and move confirmed payments
+     * forward when a new payment to them is recorded. Saves only if something changed.
+     * Returns how many new suggestions were found.
+     */
+    refreshRecurring(): number {
+      const s = get()
+      const found = detectRecurring(s.transactions)
+      let added = 0
+      const merged: RecurringPayment[] = s.recurring.map((r) => {
+        const f = found.find((x) => x.merchantKey === r.merchantKey && x.frequency === r.frequency)
+        return f && r.state === 'suggested' ? { ...r, ...f, merchantName: r.merchantName, expectedAmount: r.expectedAmount } : r
       })
+      for (const f of found) if (!merged.some((r) => r.merchantKey === f.merchantKey && r.frequency === f.frequency)) { merged.push({ ...f, id: uid(), state: 'suggested' }); added++ }
+      const next = rollForward(merged, s.transactions) ?? merged
+      if (JSON.stringify(next) !== JSON.stringify(s.recurring)) set((x) => ({ ...x, recurring: next }))
+      return added
     },
     updateRecurring: (id: string, patch: Partial<RecurringPayment>) =>
       set((s) => ({ ...s, recurring: s.recurring.map((r) => (r.id === id ? { ...r, ...patch } : r)) })),

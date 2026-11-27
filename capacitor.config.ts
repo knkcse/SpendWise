@@ -5,5 +5,6 @@ const config: CapacitorConfig = {
   appName: 'SpendWise',
   webDir: 'dist',
   android: { allowMixedContent: false },
+  plugins: { LocalNotifications: { smallIcon: 'ic_stat_spendwise', iconColor: '#2F7A6B' } },
 }
 export default config

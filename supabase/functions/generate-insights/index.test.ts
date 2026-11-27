@@ -175,3 +175,19 @@ Deno.test('a busy model is retried once, then the next model is used', async () 
   assertEquals(err.status, 503)
   assertEquals(err.message, 'The AI service is busy right now. Try again in a minute.')
 })
+
+Deno.test('rent is not unusual; spending more than income says "overspent by"', () => {
+  const num = (s: typeof cur) => ({ ...s, spent: +s.spent, income: +s.income, by_category: s.by_category.map((x) => ({ ...x, total: +x.total })), top_merchants: s.top_merchants.map((x) => ({ ...x, total: +x.total })), by_weekday: s.by_weekday.map((x) => ({ ...x, total: +x.total })), biggest: { ...s.biggest, amount: +s.biggest.amount } })
+  const hist = [
+    ...recent.slice(1),
+    { amount: 40000, merchant_name: 'House Owner', occurred_at: '2026-11-25T08:00:00Z', type: 'debit', category_id: 'rent' },
+    { amount: 15000, merchant_name: 'Croma', occurred_at: '2026-11-20T08:00:00Z', type: 'debit', category_id: null },
+  ]
+  const facts = m.buildFacts(req as never, { cur: { ...num(cur), income: 20000 }, prev: num(prev as never), recent: hist, categories, recurring: [], budgets: [], monthSpent: 24500, monthByCategory: new Map() } as never)
+  const t = Object.fromEntries(facts.map((f) => [f.id, f.text]))
+  assertEquals(t.income, 'Income recorded this month so far: ₹20,000. You spent ₹4,500 more than that, so you are overspent by ₹4,500.')
+  const unusual = facts.filter((f) => f.id.startsWith('unusual')).map((f) => f.text).join(' ')
+  assert(!unusual.includes('House Owner'), unusual)
+  assert(unusual.includes('Croma'), unusual)
+  assertEquals(m.groundText('Your net savings are -₹4,500. You spent ₹4,500 more than you earned.', [4500]).text, 'You spent ₹4,500 more than you earned.')
+})

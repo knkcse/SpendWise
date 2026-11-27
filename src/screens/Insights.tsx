@@ -16,7 +16,7 @@ const ICON = { fact: <BarChart3 />, trend: <TrendingUp />, alert: <AlertTriangle
 export default function Insights() {
   const { transactions, recurring } = useStore()
   const { catName } = useLookups()
-  const facts = useMemo(() => computeFacts(transactions, catName), [transactions, catName])
+  const facts = useMemo(() => computeFacts(transactions, catName, new Date(), recurring), [transactions, catName, recurring])
   const suggested = recurring.filter((r) => r.state === 'suggested').length
 
   return (

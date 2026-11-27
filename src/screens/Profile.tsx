@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
-import { BellRing, CalendarDays, ChevronRight, Cloud, CloudOff, Download, LogOut, RefreshCw, Smartphone as Phone, FolderTree, Moon, Repeat, Smartphone, Trash2, BarChart3, Sparkles } from 'lucide-react'
+import { CalendarDays, ChevronRight, Cloud, CloudOff, Download, LogOut, RefreshCw, Smartphone as Phone, FolderTree, Moon, Repeat, Smartphone, Trash2, BarChart3, Sparkles } from 'lucide-react'
 import { PageHeader } from '@/components/layout/AppShell'
 import { Card } from '@/components/ui/card'
 import { Confirm, Segmented, Switch } from '@/components/ui/misc'
@@ -11,6 +11,7 @@ import { Avatar } from '@/components/Avatar'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { saveFile, shareFile } from '@/lib/saveFile'
+import { NotificationSettings } from '@/components/NotificationSettings'
 
 export default function Profile() {
   const s = useStore()
@@ -57,19 +58,19 @@ export default function Profile() {
             <Segmented value={s.prefs.theme} onChange={(theme) => s.setPrefs({ theme })} options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }, { value: 'system', label: 'System' }]} /></div>
           <div className="p-4"><p className="mb-2 flex items-center gap-2 text-sm font-medium"><CalendarDays className="size-4 text-muted-foreground" />Week starts on</p>
             <Segmented value={String(s.prefs.weekStartsOn) as '0' | '1'} onChange={(v) => s.setPrefs({ weekStartsOn: Number(v) as 0 | 1 })} options={[{ value: '1', label: 'Monday' }, { value: '0', label: 'Sunday' }]} /></div>
-          <div className="flex items-center justify-between p-4"><p className="flex items-center gap-2 text-sm font-medium"><BellRing className="size-4 text-muted-foreground" />Budget alerts</p>
-            <Switch checked={s.prefs.budgetAlerts} onCheckedChange={(c) => s.setPrefs({ budgetAlerts: c })} /></div>
           <div className="flex items-center justify-between gap-3 p-4"><p className="flex items-center gap-2 text-sm font-medium"><Sparkles className="size-4 text-muted-foreground" />AI insights
             <span className="sr-only">: summaries written from your totals on the server</span></p>
             <Switch checked={s.prefs.aiInsightsEnabled} onCheckedChange={(c) => s.setPrefs({ aiInsightsEnabled: c })} aria-label="AI insights" /></div>
         </Card>
+
+        <Card className="divide-y"><NotificationSettings /></Card>
 
         <Card className="divide-y">
           <button onClick={exportAll} className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm"><Download className="size-4 text-muted-foreground" />Download all my data (JSON)</button>
           <button disabled={!s.transactions.length} onClick={() => nav('/transactions?export=1')} className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm disabled:opacity-50"><Download className="size-4 text-muted-foreground" />Export transactions (PDF, Excel, CSV)</button>
           <button onClick={() => setDel(true)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm text-destructive"><Trash2 className="size-4" />{s.repoKind === 'supabase' ? 'Delete my account and data' : 'Delete all my data'}</button>
         </Card>
-        <p className="pb-4 text-center text-xs text-muted-foreground">SpendWise 0.3.0 · Phase 3</p>
+        <p className="pb-4 text-center text-xs text-muted-foreground">SpendWise 0.6.0 · Phase 6</p>
       </div>
       <Confirm open={del} onOpenChange={setDel} title="Delete all data?" confirmLabel="Delete everything"
         body={s.repoKind === 'supabase' ? `This permanently deletes your SpendWise account and all ${s.transactions.length} transactions, budgets, categories and settings stored in it.` : `This permanently removes ${s.transactions.length} transactions, your budgets, categories and settings from this device.`}

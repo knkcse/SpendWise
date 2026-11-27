@@ -109,7 +109,7 @@ runs on the phone (before queueing), in CSV import preview, and in the edge func
 | 3 ✅ | Expense management on Supabase (splits, rules, import, bulk edits, integrity triggers) | — |
 | 4 ✅ | Analytics in Postgres (`analytics_summary`, `analytics_overview` RPCs) with an identical on-device fallback (`src/lib/summary.ts`); parity test `src/lib/summary.pg.test.ts` (PGTEST=1) | Run phase4-analytics.sql |
 | 5 ✅ | `supabase/functions/generate-insights` (facts computed from SQL, model only phrases them; every ₹/% in model text checked against facts; provider set by `AI_PROVIDER`/`AI_MODEL` secrets: gemini, anthropic, openai-compatible). Deno tests: `deno test --allow-env supabase/functions/generate-insights/`. Also category drill-down, custom-range report, payment-method and personal/business breakdowns | `GEMINI_API_KEY` secret; deploy the function |
-| 6 | Budget alerts as local notifications; recurring detection cron | — |
+| 6 ✅ | Budget alerts and payment reminders as local notifications (`src/lib/alerts.ts`, `src/lib/notifications.ts`, `useNotificationsAgent`); recurring scan on the phone about twice a day (suggestions only, confirmed ones roll forward) | Redeploy generate-insights (wording fixes) |
 | 7 | Kotlin `NotificationListenerService` + Capacitor plugin + parsers per app | Real notification samples (redacted) and a real phone for testing |
 | 8 | Room queue, WorkManager sync, ingest function | — |
 | 9 | Test pass: unit, E2E, on-device | Real-device testing |

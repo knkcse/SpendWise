@@ -36,7 +36,7 @@ export interface Summary {
   top_merchants: Array<Bucket & { merchant: string }>
   by_weekday: Array<Bucket & { dow: number }>
 }
-export interface Txn { amount: number; merchant_name: string; occurred_at: string; type: string }
+export interface Txn { amount: number; merchant_name: string; occurred_at: string; type: string; category_id?: string | null }
 export interface Inputs {
   cur: Summary; prev: Summary; recent: Txn[]
   categories: Array<{ id: string; name: string }>
@@ -54,6 +54,18 @@ export function inr(n: number): string {
   return (v < 0 ? '-' : '') + '₹' + new Intl.NumberFormat('en-IN', { maximumFractionDigits: Math.abs(v) >= 100 ? 0 : 2 }).format(Math.abs(v))
 }
 const pct = (a: number, b: number) => Math.round(((a - b) / b) * 100)
+// Big but expected payments (rent, EMIs, insurance, fees, SIPs, confirmed recurring, or a repeat of a
+// similar payment to the same merchant) are never called unusual. Same rule as src/lib/analytics.ts.
+export const PLANNED_CATEGORY = /\b(rent|emi|emis|loans?|insurance|investments?|sip|education|school|fees?|tuition)\b/i
+const mkey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+export function planned(t: Txn, hist: Txn[], name: (id: string | null) => string, recurring: Array<{ merchant_name: string }>): boolean {
+  if (t.category_id && PLANNED_CATEGORY.test(name(t.category_id))) return true
+  const k = mkey(t.merchant_name)
+  if (recurring.some((r) => mkey(r.merchant_name) === k)) return true
+  // A monthly repeat of a similar large payment (the same merchant 25 to 35 days earlier, within 15%).
+  const x = Date.parse(t.occurred_at)
+  return t.amount >= 1000 && hist.some((h) => { const gap = (x - Date.parse(h.occurred_at)) / 86400000; return h !== t && gap >= 25 && gap <= 35 && mkey(h.merchant_name) === k && Math.abs(h.amount - t.amount) <= t.amount * 0.15 })
+}
 const DAYS = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays']
 
 export function buildFacts(req: InsightRequest, d: Inputs): Fact[] {
@@ -66,7 +78,12 @@ export function buildFacts(req: InsightRequest, d: Inputs): Fact[] {
     const ch = pct(c.spent, p.spent)
     add('change', `That is ${ch >= 0 ? 'up' : 'down'} ${Math.abs(ch)}% compared with ${req.prevLabel} (${inr(p.spent)}).`, Math.abs(ch), p.spent)
   } else add('change', `Nothing was spent ${req.prevLabel}, so there is no comparison.`)
-  if (c.income > 0) add('income', `Income recorded ${req.label}: ${inr(c.income)}, so net savings are ${inr(c.income - c.spent)} (recorded income minus expenses).`, c.income, c.income - c.spent, Math.abs(c.income - c.spent))
+  if (c.income > 0) {
+    const net = c.income - c.spent
+    add('income', net >= 0
+      ? `Income recorded ${req.label}: ${inr(c.income)}. You kept ${inr(net)} after expenses.`
+      : `Income recorded ${req.label}: ${inr(c.income)}. You spent ${inr(-net)} more than that, so you are overspent by ${inr(-net)}.`, c.income, Math.abs(net))
+  }
 
   const cats = [...c.by_category].sort((a, b) => b.total - a.total)
   cats.slice(0, 3).forEach((x, i) => {
@@ -91,12 +108,14 @@ export function buildFacts(req: InsightRequest, d: Inputs): Fact[] {
   if (small.length >= (req.period === 'daily' ? 3 : 6)) add('small', `${small.length} small payments of ₹200 or less added up to ${inr(small.reduce((a, t) => a + t.amount, 0))} ${req.label}.`, small.length, small.reduce((a, t) => a + t.amount, 0), 200)
 
   const hist = d.recent.filter((t) => t.type === 'debit')
-  if (hist.length >= 10) {
-    const amts = hist.map((t) => t.amount).sort((a, b) => a - b)
+  // Usual payments: planned ones (rent, EMIs, ...) are left out so they don't hide a real outlier.
+  const usual = hist.filter((t) => !planned(t, hist, name, d.recurring))
+  if (usual.length >= 10) {
+    const amts = usual.map((t) => t.amount).sort((a, b) => a - b)
     const mean = amts.reduce((a, x) => a + x, 0) / amts.length
     const sd = Math.sqrt(amts.reduce((a, x) => a + (x - mean) ** 2, 0) / amts.length)
     const median = amts[Math.floor(amts.length / 2)]
-    inPeriod.filter((t) => t.amount > mean + 3 * sd).sort((a, b) => b.amount - a.amount).slice(0, 2).forEach((t, i) =>
+    inPeriod.filter((t) => t.amount > mean + 3 * sd && usual.includes(t)).sort((a, b) => b.amount - a.amount).slice(0, 2).forEach((t, i) =>
       add(`unusual-${i + 1}`, `${inr(t.amount)} at ${t.merchant_name} is much larger than your usual payment (typically about ${inr(median)} over the last 90 days).`, t.amount, median))
   }
   if (req.period !== 'daily' && c.expense_count >= 5) {
@@ -126,6 +145,8 @@ Rules:
 - Write amounts in rupees with the ₹ sign and Indian digit grouping, as in the facts.
 - Do not call any purchase unnecessary or wasteful. You may suggest reviewing a category or merchant when a fact shows it is large, rising or frequent.
 - Savings ideas are estimates, not money already saved. Base each one on specific facts and give an estimated monthly saving in rupees that is smaller than the spending it comes from, or null.
+- Never write a negative amount or "negative savings". When expenses are more than income, say "overspent by ₹X".
+- Rent, EMIs, insurance and other planned or recurring payments are expected. Never call them unusual, surprising or wasteful.
 - Plain, friendly, short sentences. No markdown.
 Reply with JSON only, in exactly this shape:
 {"summary": "2 to 4 sentences", "highlights": ["up to 4 short points"], "recommendations": [{"title": "short", "detail": "1 to 2 sentences", "estimated_saving": 1000, "basis": ["fact ids"]}]}
@@ -152,7 +173,8 @@ const close = (a: number, b: number) => Math.abs(a - b) <= Math.max(1, Math.abs(
 /** Removes sentences that cite a number not present in the facts. */
 export function groundText(text: string, allowed: number[]): { text: string; removed: number } {
   const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean)
-  const kept = sentences.filter((s) => numbersIn(s).every((n) => allowed.some((a) => close(n.value, a))))
+  // Negative money ("-₹500", "₹-500") and "negative savings" are never shown; the facts say "overspent by" instead.
+  const kept = sentences.filter((s) => !/-\s*₹|₹\s*-|negative (net )?savings/i.test(s) && numbersIn(s).every((n) => allowed.some((a) => close(n.value, a))))
   return { text: kept.join(' '), removed: sentences.length - kept.length }
 }
 
@@ -392,7 +414,7 @@ export function makeHandler(deps: Deps) {
       const [cur, prev, recent, categories, recurring, budgets, month] = await Promise.all([
         call<Summary>(db.rpc('analytics_summary', { p_from: r.from, p_to: r.to, p_tz: r.tz })),
         call<Summary>(db.rpc('analytics_summary', { p_from: r.prevFrom, p_to: r.prevTo, p_tz: r.tz })),
-        call<Txn[]>(db.from('transactions').select('amount, merchant_name, occurred_at, type').eq('exclude_from_reports', false).gte('occurred_at', since).order('occurred_at', { ascending: false }).limit(5000)),
+        call<Txn[]>(db.from('transactions').select('amount, merchant_name, occurred_at, type, category_id').eq('exclude_from_reports', false).gte('occurred_at', since).order('occurred_at', { ascending: false }).limit(5000)),
         call<Array<{ id: string; name: string }>>(db.from('categories').select('id, name')),
         call<Inputs['recurring']>(db.from('recurring_transactions').select('merchant_name, expected_amount, frequency').eq('state', 'confirmed')),
         call<Inputs['budgets']>(db.from('budgets').select('category_id, amount').eq('month', r.monthStart)),

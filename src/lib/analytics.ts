@@ -114,12 +114,28 @@ export function detectRecurring(ts: Transaction[]): Omit<RecurringPayment, 'id' 
 }
 
 // ---------------------------------------------------------------------------
+// Planned payments: big but expected (rent, EMIs, insurance, fees, SIPs, known
+// recurring payments, or a repeat of a similar payment to the same merchant).
+// These are never called "unusual".
+// ---------------------------------------------------------------------------
+export const PLANNED_CATEGORY = /\b(rent|emi|emis|loans?|insurance|investments?|sip|education|school|fees?|tuition)\b/i
+
+export function isPlannedPayment(t: Transaction, history: Transaction[], catName: (id: string | null) => string, recurringKeys: Set<string>): boolean {
+  if (t.categoryId && PLANNED_CATEGORY.test(catName(t.categoryId))) return true
+  const k = merchantKey(t.merchantName)
+  if (recurringKeys.has(k)) return true
+  // A monthly repeat of a similar large payment (the same merchant 25 to 35 days earlier, within 15%).
+  const x = Date.parse(t.occurredAt)
+  return t.amount >= 1000 && history.some((h) => { const gap = (x - Date.parse(h.occurredAt)) / 86400000; return h.id !== t.id && h.type === 'debit' && gap >= 25 && gap <= 35 && merchantKey(h.merchantName) === k && Math.abs(h.amount - t.amount) <= t.amount * 0.15 })
+}
+
+// ---------------------------------------------------------------------------
 // Fact-based insights (no AI). Phase 5 sends these facts to the backend model,
 // which may only phrase them and suggest actions, never change the numbers.
 // ---------------------------------------------------------------------------
 export interface Fact { id: string; text: string; kind: 'fact' | 'trend' | 'alert' }
 
-export function computeFacts(ts: Transaction[], catName: (id: string | null) => string, now = new Date()): Fact[] {
+export function computeFacts(ts: Transaction[], catName: (id: string | null) => string, now = new Date(), recurring: RecurringPayment[] = []): Fact[] {
   const cur = { from: startOfMonth(now), to: now }
   const prevStart = startOfMonth(subMonths(now, 1))
   const prev = { from: prevStart, to: addDays(prevStart, differenceInCalendarDays(now, cur.from)) } // same days elapsed
@@ -139,11 +155,15 @@ export function computeFacts(ts: Transaction[], catName: (id: string | null) => 
   if (freq && freq.count >= 3) facts.push({ id: 'freq-merchant', kind: 'fact', text: `You paid ${freq.key} ${freq.count} times this month, totalling ${fmt(freq.total)}.` })
   const small = expenses(cw).filter((t) => t.amount <= 200)
   if (small.length >= 10) facts.push({ id: 'small', kind: 'fact', text: `${small.length} small payments of ₹200 or less added up to ${fmt(sum(small))} this month.` })
-  const ex = expenses(within(ts, { from: subMonths(now, 3), to: now }))
+  // Usual payments: planned ones (rent, EMIs, ...) are left out so they don't hide a real outlier,
+  // and are never called unusual themselves.
+  const keys = new Set(recurring.filter((r) => r.state !== 'rejected').map((r) => r.merchantKey))
+  const ex = expenses(within(ts, { from: subMonths(now, 3), to: now })).filter((t) => !isPlannedPayment(t, ts, catName, keys))
   if (ex.length >= 10) {
     const mean = sum(ex) / ex.length
     const sd = Math.sqrt(ex.reduce((a, t) => a + (t.amount - mean) ** 2, 0) / ex.length)
-    const unusual = expenses(cw).filter((t) => t.amount > mean + 3 * sd)
+    const usual = new Set(ex.map((t) => t.id))
+    const unusual = expenses(cw).filter((t) => t.amount > mean + 3 * sd && usual.has(t.id))
     for (const t of unusual.slice(0, 2)) facts.push({ id: `unusual-${t.id}`, kind: 'alert', text: `${fmt(t.amount)} at ${t.merchantName} on ${format(new Date(t.occurredAt), 'd MMM')} is much larger than your usual payments.` })
   }
   return facts
