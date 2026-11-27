@@ -225,25 +225,70 @@ export function fallbackRecs(facts: Fact[]): Recommendation[] {
 // ---------------------------------------------------------------------------
 // Providers: swap by setting AI_PROVIDER / AI_MODEL / the key. Nothing else changes.
 // ---------------------------------------------------------------------------
-export interface ProviderConfig { provider: string; model: string; key: string; baseUrl?: string }
+export interface ProviderConfig { provider: string; model: string; key: string; baseUrl?: string; /** true when AI_MODEL was set; Gemini then tries it first */ pinned?: boolean }
 type Fetch = typeof fetch
 
 export function providerConfig(env: (k: string) => string | undefined): ProviderConfig {
   const provider = (env('AI_PROVIDER') ?? 'gemini').toLowerCase()
   const defaults: Record<string, [string, string]> = {
-    gemini: ['gemini-2.5-flash', 'GEMINI_API_KEY'], anthropic: ['claude-haiku-5-5', 'ANTHROPIC_API_KEY'], openai: ['gpt-4o-mini', 'OPENAI_API_KEY'],
+    gemini: ['auto', 'GEMINI_API_KEY'], anthropic: ['claude-haiku-5-5', 'ANTHROPIC_API_KEY'], openai: ['gpt-4o-mini', 'OPENAI_API_KEY'],
   }
   const [model, keyName] = defaults[provider] ?? defaults.openai
   const key = env(keyName) ?? ''
   if (!key) throw new HttpError(503, `AI is not set up: add the ${keyName} secret in Supabase.`)
-  return { provider, model: env('AI_MODEL') ?? model, key, baseUrl: env('AI_BASE_URL') }
+  return { provider, model: env('AI_MODEL') ?? model, key, baseUrl: env('AI_BASE_URL'), pinned: !!env('AI_MODEL') }
 }
 
+// Google retires Gemini model names often (and refuses old ones for new keys), so the model is
+// picked at run time: AI_MODEL if set, then the newest stable Flash models this key can list,
+// then a built-in list. A model that is refused or missing is skipped and the next one is tried.
+const GEMINI = 'https://generativelanguage.googleapis.com/v1beta'
+export const GEMINI_FALLBACK = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest', 'gemini-3.5-flash-lite']
+let geminiListCache: { at: number; models: string[] } | null = null
+
+/** Stable text Flash models the key can use, newest first (no preview, image, audio or live variants). */
+export async function listGeminiModels(key: string, f: Fetch = fetch): Promise<string[]> {
+  if (geminiListCache && Date.now() - geminiListCache.at < 3600_000) return geminiListCache.models
+  try {
+    const res = await f(`${GEMINI}/models?pageSize=200`, { headers: { 'x-goog-api-key': key }, signal: AbortSignal.timeout(8000) })
+    if (!res.ok) return []
+    const b = await res.json() as { models?: Array<{ name: string; supportedGenerationMethods?: string[] }> }
+    const ver = (n: string) => Number(n.match(/gemini-(\d+(?:\.\d+)?)/)?.[1] ?? 0)
+    const models = (b.models ?? [])
+      .filter((m) => m.supportedGenerationMethods?.includes('generateContent'))
+      .map((m) => m.name.replace(/^models\//, ''))
+      .filter((n) => /^gemini-\d+(\.\d+)?-flash(-lite)?$/.test(n))
+      .sort((a, z) => Number(a.includes('lite')) - Number(z.includes('lite')) || ver(z) - ver(a))
+    geminiListCache = { at: Date.now(), models }
+    return models
+  } catch { return [] }
+}
+
+const retired = (status: number, msg: string) => status === 404 || ((status === 400 || status === 403) && /no longer available|not found|not supported|deprecated|retired|unsupported model|is not available/i.test(msg))
+
 export async function callModel(cfg: ProviderConfig, system: string, user: string, f: Fetch = fetch): Promise<string> {
+  if (cfg.provider === 'gemini') {
+    const listed = await listGeminiModels(cfg.key, f)
+    const order = [...new Set([...(cfg.pinned ? [cfg.model] : []), ...listed, ...GEMINI_FALLBACK])]
+    let last = ''
+    for (const model of order.slice(0, 6)) {
+      try { const text = await callOne({ ...cfg, model }, system, user, f); cfg.model = model; return text } catch (e) {
+        if (e instanceof RetiredModel) { last = e.message; continue }
+        throw e
+      }
+    }
+    throw new HttpError(502, `No Gemini model was available for this key. Set the AI_MODEL secret to a model listed in Google AI Studio. (${last})`)
+  }
+  return callOne(cfg, system, user, f)
+}
+
+class RetiredModel extends Error {}
+
+async function callOne(cfg: ProviderConfig, system: string, user: string, f: Fetch): Promise<string> {
   const signal = AbortSignal.timeout(30000)
   let res: Response
   if (cfg.provider === 'gemini') {
-    res = await f(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.model)}:generateContent`, {
+    res = await f(`${GEMINI}/models/${encodeURIComponent(cfg.model)}:generateContent`, {
       method: 'POST', signal, headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.key },
       body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts: [{ text: user }] }], generationConfig: { temperature: 0.3, responseMimeType: 'application/json' } }),
     })
@@ -261,6 +306,7 @@ export async function callModel(cfg: ProviderConfig, system: string, user: strin
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
     const msg = (body as { error?: { message?: string } }).error?.message ?? `HTTP ${res.status}`
+    if (cfg.provider === 'gemini' && retired(res.status, msg)) throw new RetiredModel(`${cfg.model}: ${msg}`)
     throw new HttpError(res.status === 429 ? 429 : 502, res.status === 429 ? 'The AI service is busy or its free limit is used up. Try again in a minute.' : `The AI service returned an error: ${msg}`)
   }
   const b = body as Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any

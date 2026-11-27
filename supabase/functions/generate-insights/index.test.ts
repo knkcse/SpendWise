@@ -83,6 +83,7 @@ Deno.test('end to end: JWT user, facts from SQL, Gemini call, grounded result sa
   const log: string[] = [], stored: Record<string, unknown>[] = []
   let sent: { url: string; headers: Record<string, string>; body: Record<string, unknown> } | null = null
   const fakeFetch = (url: string, init: RequestInit) => {
+    if (url.includes('/models?')) return Promise.resolve(new Response('{}', { status: 403 })) // listing not allowed: use the built-in list
     sent = { url, headers: init.headers as Record<string, string>, body: JSON.parse(String(init.body)) }
     const out = { summary: 'You spent ₹24,500 this month so far, up 29% compared with the same point last month. Rent was your biggest cost at ₹12,000.', highlights: ['Swiggy: 7 orders'],
       recommendations: [{ title: 'Order in less', detail: 'You paid Swiggy 7 times, ₹4,100 in total.', estimated_saving: 1000, basis: ['frequent-merchant'] }] }
@@ -98,12 +99,12 @@ Deno.test('end to end: JWT user, facts from SQL, Gemini call, grounded result sa
   const body = await res.json()
   assertEquals(res.status, 200, JSON.stringify(body))
   assert(log.includes('client:anon:Bearer good'), 'reads use the caller JWT')
-  assert(sent!.url.includes('gemini-2.5-flash:generateContent'))
+  assert(sent!.url.includes('gemini-3.8-flash:generateContent'))
   assertEquals(sent!.headers['x-goog-api-key'], 'AIza-test')
   assertMatch(JSON.stringify(sent!.body), /\[total\] You spent ₹24,500/)
   const row = stored[0]
   assertEquals(row.user_id, 'user-1') // from the JWT, not the body
-  assertEquals(row.model, 'gemini:gemini-2.5-flash')
+  assertEquals(row.model, 'gemini:gemini-3.8-flash')
   assertMatch(String(row.narrative), /₹24,500/)
   const recs = row.recommendations as Array<{ title: string; estimated_saving: number | null }>
   assertEquals(recs.length, 3)
@@ -128,4 +129,26 @@ Deno.test('switching provider is configuration only', async () => {
   let threw = ''
   try { m.providerConfig(() => undefined) } catch (e) { threw = (e as Error).message }
   assertMatch(threw, /GEMINI_API_KEY/)
+})
+
+Deno.test('Gemini: retired model is skipped, newest listed Flash model is used', async () => {
+  const tried: string[] = []
+  const f = ((url: string) => {
+    if (url.includes('/models?')) return Promise.resolve(new Response(JSON.stringify({ models: [
+      { name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] },
+      { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent'] },
+      { name: 'models/gemini-3.9-flash-preview', supportedGenerationMethods: ['generateContent'] },
+      { name: 'models/gemini-3.8-flash-image', supportedGenerationMethods: ['generateContent'] },
+      { name: 'models/gemini-3.7-flash-lite', supportedGenerationMethods: ['generateContent'] },
+      { name: 'models/text-embedding-005', supportedGenerationMethods: ['embedContent'] },
+    ] })))
+    const model = url.split('/models/')[1].split(':')[0]; tried.push(model)
+    if (model === 'gemini-old') return Promise.resolve(new Response(JSON.stringify({ error: { message: 'This model models/gemini-old is no longer available to new users.' } }), { status: 404 }))
+    return Promise.resolve(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"summary":"ok"}' }] } }] })))
+  }) as never
+  assertEquals(await m.listGeminiModels('k', f), ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-3.7-flash-lite'])
+  const cfg = m.providerConfig((k) => ({ GEMINI_API_KEY: 'k', AI_MODEL: 'gemini-old' } as Record<string, string>)[k])
+  assertEquals(await m.callModel(cfg, 's', 'u', f), '{"summary":"ok"}')
+  assertEquals(tried, ['gemini-old', 'gemini-3.8-flash'])
+  assertEquals(cfg.model, 'gemini-3.8-flash')
 })
